@@ -1,105 +1,55 @@
-import cx_Oracle
-from typing import List, Dict
-import os
+ I'll provide a complete example with a class method to handle multiple column names:
 
-def connect_to_oracle(username: str, password: str, host: str, port: str, service_name: str) -> cx_Oracle.Connection:
-    """
-    Establishes connection to Oracle database
-    
-    Args:
-        username (str): Database username
-        password (str): Database password
-        host (str): Database host address
-        port (str): Database port number
-        service_name (str): Oracle service name
-    
-    Returns:
-        cx_Oracle.Connection: Database connection object
-    """
-    dsn = cx_Oracle.makedsn(host=host, port=port, service_name=service_name)
-    connection = cx_Oracle.connect(user=username, password=password, dsn=dsn)
-    return connection
+```python
+from msgspec import Struct
+from typing import Optional
 
-def query_with_params(connection: cx_Oracle.Connection, 
-                     sql_query: str,
-                     params: Dict = None) -> List[Dict]:
-    """
-    Executes a parameterized query and returns results
-    
-    Args:
-        connection (cx_Oracle.Connection): Database connection
-        sql_query (str): SQL query with bind variables
-        params (Dict): Dictionary of parameter names and values
-    
-    Returns:
-        List[Dict]: List of dictionaries containing query results
-    """
-    try:
-        # Create cursor
-        cursor = connection.cursor()
-        
-        # Execute query with parameters
-        cursor.execute(sql_query, params or {})
-        
-        # Get column names
-        columns = [col[0] for col in cursor.description]
-        
-        # Fetch results and convert to list of dictionaries
-        results = []
-        for row in cursor:
-            results.append(dict(zip(columns, row)))
-            
-        return results
-        
-    except cx_Oracle.Error as error:
-        print(f"Database error: {error}")
-        raise
-        
-    finally:
-        if cursor:
-            cursor.close()
+class AccountInfo(Struct):
+    account_number: Optional[str] = None
+    balance: Optional[float] = None
 
+    @classmethod
+    def from_dict(cls, data: dict):
+        # Try different possible column names for account number
+        account_number = data.get('accountNumber') or data.get('ACCT_NUM')
+        
+        # You can do the same for other fields if needed
+        balance = data.get('balance')
+        
+        return cls(
+            account_number=account_number,
+            balance=balance
+        )
+
+# Example usage
 def main():
-    # Database connection parameters
-    db_config = {
-        "username": "your_username",
-        "password": "your_password",
-        "host": "your_host",
-        "port": "1521",  # Default Oracle port
-        "service_name": "your_service_name"
-    }
-    
-    # Example query with parameters
-    query = """
-    SELECT * 
-    FROM employees 
-    WHERE department_id = :dept_id 
-    AND salary >= :min_salary
-    """
-    
-    # Parameter values
-    params = {
-        "dept_id": 10,
-        "min_salary": 50000
-    }
-    
-    try:
-        # Establish connection
-        connection = connect_to_oracle(**db_config)
-        
-        # Execute query
-        results = query_with_params(connection, query, params)
-        
-        # Process results
-        for row in results:
-            print(row)
-            
-    except Exception as e:
-        print(f"Error: {e}")
-        
-    finally:
-        if connection:
-            connection.close()
+    # Test with different column names
+    data1 = {"accountNumber": "12345", "balance": 1000.50}
+    data2 = {"ACCT_NUM": "67890", "balance": 2000.75}
+
+    # Parse using the custom class method
+    account1 = AccountInfo.from_dict(data1)
+    account2 = AccountInfo.from_dict(data2)
+
+    print(account1)  # AccountInfo(account_number='12345', balance=1000.50)
+    print(account2)  # AccountInfo(account_number='67890', balance=2000.75)
+
+    # Optional: you can add error handling
+    data3 = {"someOtherKey": "value"}
+    account3 = AccountInfo.from_dict(data3)
+    print(account3)  # AccountInfo(account_number=None, balance=None)
 
 if __name__ == "__main__":
     main()
+```
+
+Key points:
+- The `from_dict()` class method allows flexible parsing
+- It checks multiple possible column names
+- Uses `.get()` to safely retrieve values
+- Returns an instance of the class with the parsed data
+- Handles cases where the expected columns might be missing
+
+This approach gives you maximum flexibility in handling different column name variations while keeping your code clean and readable.
+
+Would you like me to elaborate on any part of this example?

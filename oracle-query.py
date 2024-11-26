@@ -1,202 +1,196 @@
-import unittest
-from unittest.mock import patch, MagicMock
-import json
-import os
-from typing import Dict, Any
-import re
-import pytest
-from dataclasses import asdict
+# Project Structure
+# mortgage_calculator/
+#   ├── manage.py
+#   ├── mortgage_project/
+#   │   ├── __init__.py
+#   │   ├── settings.py
+#   │   ├── urls.py
+#   │   └── wsgi.py
+#   └── mortgage/
+#       ├── __init__.py
+#       ├── admin.py
+#       ├── apps.py
+#       ├── models.py
+#       ├── serializers.py
+#       ├── views.py
+#       └── calculations.py
 
-from .account_process import AccountProcessView
-from .structs import GeneralRequest, InternalRecord, OracleDESRecord
+# mortgage/calculations.py
+import datetime
+import math
 
-class TestAccountProcessView(unittest.TestCase):
-    def setUp(self):
-        """Set up test fixtures before each test method."""
-        self.view = AccountProcessView()
-        self.maxDiff = None
+class MortgageCalculator:
+    def __init__(self, loan_amount, original_date, interest_rate, loan_term_years):
+        """
+        Initialize mortgage calculation parameters
         
-        # Sample valid input data
-        self.valid_input = {
-            "familyName": "SMITH",
-            "givenName": "JOHN",
-            "city": "WOODLAND HILLS",
-            "line1": "6201 JACKIE AVE",
-            "postalCode": "91367",
-            "territoryCode": "CA",
-            "line2": "",
-            "areaCode": "637",
-            "exchange": "123",
-            "lineNumber": "4997",
-            "emailAddress": "test@charter.com"
+        :param loan_amount: Original loan amount
+        :param original_date: Date when mortgage was originated
+        :param interest_rate: Annual interest rate (as a percentage)
+        :param loan_term_years: Loan term in years
+        """
+        self.loan_amount = float(loan_amount)
+        self.original_date = original_date
+        self.interest_rate = float(interest_rate) / 100  # Convert to decimal
+        self.loan_term_years = int(loan_term_years)
+        
+        # Monthly calculations
+        self.monthly_rate = self.interest_rate / 12
+        self.total_months = self.loan_term_years * 12
+    
+    def calculate_standard_payment(self):
+        """
+        Calculate standard monthly mortgage payment
+        """
+        monthly_payment = self.loan_amount * (
+            self.monthly_rate * (1 + self.monthly_rate) ** self.total_months
+        ) / ((1 + self.monthly_rate) ** self.total_months - 1)
+        return round(monthly_payment, 2)
+    
+    def calculate_total_interest(self):
+        """
+        Calculate total interest paid over the life of the loan
+        """
+        monthly_payment = self.calculate_standard_payment()
+        total_paid = monthly_payment * self.total_months
+        total_interest = total_paid - self.loan_amount
+        return round(total_interest, 2)
+    
+    def calculate_extra_payment_scenarios(self, extra_monthly_payment):
+        """
+        Calculate scenarios with extra monthly payments
+        
+        :param extra_monthly_payment: Additional amount paid monthly
+        :return: Dictionary of extra payment scenarios
+        """
+        standard_monthly_payment = self.calculate_standard_payment()
+        total_monthly_payment = standard_monthly_payment + extra_monthly_payment
+        
+        # Remaining balance tracker
+        remaining_balance = self.loan_amount
+        month_count = 0
+        total_interest_paid = 0
+        
+        while remaining_balance > 0:
+            # Calculate interest for the month
+            monthly_interest = remaining_balance * self.monthly_rate
+            total_interest_paid += monthly_interest
+            
+            # Apply payment
+            principal_payment = total_monthly_payment - monthly_interest
+            remaining_balance -= principal_payment
+            
+            month_count += 1
+            
+            # Prevent infinite loop
+            if month_count > (self.loan_term_years * 12 * 2):
+                break
+        
+        # Calculate time saved and total interest saved
+        standard_total_interest = self.calculate_total_interest()
+        months_saved = self.total_months - month_count
+        interest_saved = standard_total_interest - total_interest_paid
+        
+        return {
+            'new_payoff_time_months': month_count,
+            'new_payoff_time_years': round(month_count / 12, 2),
+            'months_saved': months_saved,
+            'total_interest_paid': round(total_interest_paid, 2),
+            'total_interest_saved': round(interest_saved, 2)
         }
+
+# mortgage/serializers.py
+from rest_framework import serializers
+
+class MortgageCalculationSerializer(serializers.Serializer):
+    loan_amount = serializers.FloatField()
+    original_date = serializers.DateField()
+    interest_rate = serializers.FloatField()
+    loan_term_years = serializers.IntegerField()
+    current_loan_amount = serializers.FloatField(required=False)
+    extra_monthly_payment = serializers.FloatField(required=False, default=0)
+    
+    def validate(self, data):
+        """
+        Additional validation for mortgage calculation inputs
+        """
+        if data['loan_term_years'] not in [15, 20, 30]:
+            raise serializers.ValidationError("Loan term must be 15, 20, or 30 years")
         
-        # Sample invalid input data
-        self.invalid_input = {
-            "familyName": "",
-            "givenName": "",
-            "city": "",
-            "line1": "",
-            "postalCode": "",
-            "territoryCode": "",
-            "areaCode": "",
-            "exchange": "",
-            "lineNumber": "",
-            "emailAddress": ""
-        }
-
-    def test_environment_urls(self):
-        """Test URL configuration based on environment."""
-        test_cases = [
-            ('prod', 'https://spectrumcore.charter.com/spectrum-core/services/account/ept/getSpcAccountDivisionV1x1'),
-            ('uat', 'https://spectrumcoreuat.charter.com/spectrum-core/services/account/ept/getSpcAccountDivisionV1x1'),
-            ('local', 'https://spectrumcoreuat.charter.com/spectrum-core/services/account/ept/getSpcAccountDivisionV1x1')
-        ]
+        if data['interest_rate'] <= 0 or data['interest_rate'] > 30:
+            raise serializers.ValidationError("Interest rate must be between 0 and 30")
         
-        for env, expected_url in test_cases:
-            with patch.dict(os.environ, {'ENVIRONMENT': env}):
-                view = AccountProcessView()
-                self.assertEqual(view.url, expected_url)
-                self.assertEqual(view.system_id, "ComplianceService")
+        return data
 
-    def test_phone_parse(self):
-        """Test phone number parsing with various inputs."""
-        test_cases = [
-            # Valid cases
-            ({
-                "areaCode": "637",
-                "exchange": "123",
-                "lineNumber": "4997"
-            }, ('', '6371234997')),
-            
-            # International number
-            ({
-                "areaCode": "1637",
-                "exchange": "123",
-                "lineNumber": "4997"
-            }, ('1', '6371234997')),
-            
-            # Invalid cases
-            ({}, ('', '')),  # Empty dict
-            ({"areaCode": ""}, ('', '')),  # Missing fields
-            ({"areaCode": "abc"}, ('', '')),  # Non-numeric
-            
-            # Edge cases
-            ({
-                "areaCode": "000",
-                "exchange": "000",
-                "lineNumber": "0000"
-            }, ('', '0000000000')),
-        ]
+# mortgage/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import MortgageCalculationSerializer
+from .calculations import MortgageCalculator
+
+class MortgageCalculationView(APIView):
+    def post(self, request):
+        """
+        Handle mortgage calculation POST request
+        """
+        serializer = MortgageCalculationSerializer(data=request.data)
         
-        for input_data, expected in test_cases:
-            result = self.view.phone_parse(input_data)
-            self.assertEqual(result, expected)
-
-    def test_zip_name_parse(self):
-        """Test name and zip code parsing."""
-        test_cases = [
-            # Valid case
-            ({
-                "postalCode": "91367",
-                "givenName": "JOHN",
-                "familyName": "SMITH"
-            }, ("JOHN", "SMITH", "91367")),
+        if serializer.is_valid():
+            validated_data = serializer.validated_data
             
-            # Missing fields
-            ({}, ('', '', '')),
+            # Create mortgage calculator instance
+            calculator = MortgageCalculator(
+                loan_amount=validated_data['loan_amount'],
+                original_date=validated_data['original_date'],
+                interest_rate=validated_data['interest_rate'],
+                loan_term_years=validated_data['loan_term_years']
+            )
             
-            # Empty fields
-            ({
-                "postalCode": "",
-                "givenName": "",
-                "familyName": ""
-            }, ('', '', '')),
+            # Calculate standard mortgage details
+            monthly_payment = calculator.calculate_standard_payment()
+            total_interest = calculator.calculate_total_interest()
             
-            # Special characters in names
-            ({
-                "postalCode": "91367",
-                "givenName": "JOHN-PAUL",
-                "familyName": "O'SMITH"
-            }, ("JOHN-PAUL", "O'SMITH", "91367")),
-        ]
+            # Calculate extra payment scenario if provided
+            extra_payment_scenario = calculator.calculate_extra_payment_scenarios(
+                validated_data.get('extra_monthly_payment', 0)
+            )
+            
+            # Prepare response
+            response_data = {
+                'monthly_payment': monthly_payment,
+                'total_interest': total_interest,
+                'extra_payment_scenario': extra_payment_scenario
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
         
-        for input_data, expected in test_cases:
-            result = self.view.zip_name_parse(input_data)
-            self.assertEqual(result, expected)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def test_email_parse(self):
-        """Test email parsing."""
-        test_cases = [
-            ({"emailAddress": "test@charter.com"}, "test@charter.com"),
-            ({"emailAddress": ""}, ""),
-            ({}, ""),
-            ({"emailAddress": None}, ""),
-            ({"wrong_key": "test@charter.com"}, ""),
-        ]
-        
-        for input_data, expected in test_cases:
-            result = self.view.email_parse(input_data)
-            self.assertEqual(result, expected)
+# mortgage/urls.py
+from django.urls import path
+from .views import MortgageCalculationView
 
-    def test_address_parse(self):
-        """Test address parsing."""
-        test_cases = [
-            # Valid case
-            ({
-                "line1": "6201 JACKIE AVE",
-                "city": "WOODLAND HILLS",
-                "territoryCode": "CA"
-            }, ("6201", "JACKIE AVE", "WOODLAND HILLS", "CA")),
-            
-            # Missing fields
-            ({}, ('', '', '', '')),
-            
-            # Empty fields
-            ({
-                "line1": "",
-                "city": "",
-                "territoryCode": ""
-            }, ('', '', '', '')),
-            
-            # Complex street address
-            ({
-                "line1": "123 MAIN STREET WEST",
-                "city": "ANYTOWN",
-                "territoryCode": "NY"
-            }, ("123", "MAIN STREET WEST", "ANYTOWN", "NY")),
-        ]
-        
-        for input_data, expected in test_cases:
-            result = self.view.address_parse(input_data)
-            self.assertEqual(result, expected)
+urlpatterns = [
+    path('calculate/', MortgageCalculationView.as_view(), name='mortgage-calculation'),
+]
 
-    @patch('logging.getLogger')
-    def test_post_method(self, mock_logger):
-        """Test the post method with various scenarios."""
-        test_cases = [
-            (self.valid_input, []),  # Expecting empty list as core_services_list is not modified
-            (self.invalid_input, []),
-            ({}, []),  # Empty input
-        ]
-        
-        for input_data, expected in test_cases:
-            result = self.view.post(input_data)
-            self.assertEqual(result, expected)
-            # Verify logging calls
-            mock_logger.return_value.info.assert_any_call('This is the start of a new account identification process.')
+# mortgage_project/urls.py
+from django.contrib import admin
+from django.urls import path, include
 
-    def test_bad_phone_numbers(self):
-        """Test handling of known bad phone numbers."""
-        for bad_number in self.view.bad_numbers:
-            input_data = self.valid_input.copy()
-            input_data.update({
-                "areaCode": bad_number[:3],
-                "exchange": bad_number[3:6],
-                "lineNumber": bad_number[6:]
-            })
-            result = self.view.post(input_data)
-            self.assertEqual(result, [])
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/mortgage/', include('mortgage.urls')),
+]
 
-if __name__ == '__main__':
-    unittest.main()
+# Example request payload
+"""
+{
+    "loan_amount": 300000,
+    "original_date": "2024-01-01",
+    "interest_rate": 6.5,
+    "loan_term_years": 30,
+    "extra_monthly_payment": 200
+}
+"""

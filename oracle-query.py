@@ -1,35 +1,20 @@
-# Project Structure
-# mortgage_calculator/
-#   ├── manage.py
-#   ├── mortgage_project/
-#   │   ├── __init__.py
-#   │   ├── settings.py
-#   │   ├── urls.py
-#   │   └── wsgi.py
-#   └── mortgage/
-#       ├── __init__.py
-#       ├── admin.py
-#       ├── apps.py
-#       ├── models.py
-#       ├── serializers.py
-#       ├── views.py
-#       └── calculations.py
-
 # mortgage/calculations.py
 import datetime
 import math
 
 class MortgageCalculator:
-    def __init__(self, loan_amount, original_date, interest_rate, loan_term_years):
+    def __init__(self, loan_amount, current_loan_amount, original_date, interest_rate, loan_term_years):
         """
         Initialize mortgage calculation parameters
         
         :param loan_amount: Original loan amount
+        :param current_loan_amount: Current remaining loan amount
         :param original_date: Date when mortgage was originated
         :param interest_rate: Annual interest rate (as a percentage)
         :param loan_term_years: Loan term in years
         """
-        self.loan_amount = float(loan_amount)
+        self.original_loan_amount = float(loan_amount)
+        self.current_loan_amount = float(current_loan_amount)
         self.original_date = original_date
         self.interest_rate = float(interest_rate) / 100  # Convert to decimal
         self.loan_term_years = int(loan_term_years)
@@ -40,20 +25,45 @@ class MortgageCalculator:
     
     def calculate_standard_payment(self):
         """
-        Calculate standard monthly mortgage payment
+        Calculate standard monthly mortgage payment based on current loan amount
         """
-        monthly_payment = self.loan_amount * (
-            self.monthly_rate * (1 + self.monthly_rate) ** self.total_months
-        ) / ((1 + self.monthly_rate) ** self.total_months - 1)
+        monthly_payment = self.current_loan_amount * (
+            self.monthly_rate * (1 + self.monthly_rate) ** self._remaining_months()
+        ) / ((1 + self.monthly_rate) ** self._remaining_months() - 1)
         return round(monthly_payment, 2)
     
-    def calculate_total_interest(self):
+    def _remaining_months(self):
         """
-        Calculate total interest paid over the life of the loan
+        Calculate remaining months based on original and current loan amount
+        """
+        # Calculate how many months have passed and remaining months
+        months_paid = round(
+            (self.original_loan_amount - self.current_loan_amount) / 
+            (self.original_loan_amount / self.total_months)
+        )
+        return max(self.total_months - months_paid, 1)
+    
+    def calculate_total_remaining_interest(self):
+        """
+        Calculate total interest to be paid from current point
         """
         monthly_payment = self.calculate_standard_payment()
-        total_paid = monthly_payment * self.total_months
-        total_interest = total_paid - self.loan_amount
+        remaining_months = self._remaining_months()
+        
+        total_paid = monthly_payment * remaining_months
+        total_interest = total_paid - self.current_loan_amount
+        return round(total_interest, 2)
+    
+    def calculate_original_total_interest(self):
+        """
+        Calculate total interest that would have been paid on original schedule
+        """
+        original_monthly_payment = self.original_loan_amount * (
+            self.monthly_rate * (1 + self.monthly_rate) ** self.total_months
+        ) / ((1 + self.monthly_rate) ** self.total_months - 1)
+        
+        total_paid = original_monthly_payment * self.total_months
+        total_interest = total_paid - self.original_loan_amount
         return round(total_interest, 2)
     
     def calculate_extra_payment_scenarios(self, extra_monthly_payment):
@@ -67,7 +77,7 @@ class MortgageCalculator:
         total_monthly_payment = standard_monthly_payment + extra_monthly_payment
         
         # Remaining balance tracker
-        remaining_balance = self.loan_amount
+        remaining_balance = self.current_loan_amount
         month_count = 0
         total_interest_paid = 0
         
@@ -87,15 +97,16 @@ class MortgageCalculator:
                 break
         
         # Calculate time saved and total interest saved
-        standard_total_interest = self.calculate_total_interest()
-        months_saved = self.total_months - month_count
-        interest_saved = standard_total_interest - total_interest_paid
+        original_remaining_interest = self.calculate_total_remaining_interest()
+        months_saved = self._remaining_months() - month_count
+        interest_saved = original_remaining_interest - total_interest_paid
         
         return {
             'new_payoff_time_months': month_count,
             'new_payoff_time_years': round(month_count / 12, 2),
-            'months_saved': months_saved,
-            'total_interest_paid': round(total_interest_paid, 2),
+            'months_saved': max(months_saved, 0),
+            'current_remaining_interest': round(original_remaining_interest, 2),
+            'total_interest_paid_with_extra': round(total_interest_paid, 2),
             'total_interest_saved': round(interest_saved, 2)
         }
 
@@ -104,10 +115,10 @@ from rest_framework import serializers
 
 class MortgageCalculationSerializer(serializers.Serializer):
     loan_amount = serializers.FloatField()
+    current_loan_amount = serializers.FloatField()
     original_date = serializers.DateField()
     interest_rate = serializers.FloatField()
     loan_term_years = serializers.IntegerField()
-    current_loan_amount = serializers.FloatField(required=False)
     extra_monthly_payment = serializers.FloatField(required=False, default=0)
     
     def validate(self, data):
@@ -119,6 +130,9 @@ class MortgageCalculationSerializer(serializers.Serializer):
         
         if data['interest_rate'] <= 0 or data['interest_rate'] > 30:
             raise serializers.ValidationError("Interest rate must be between 0 and 30")
+        
+        if data['current_loan_amount'] > data['loan_amount']:
+            raise serializers.ValidationError("Current loan amount cannot be greater than original loan amount")
         
         return data
 
@@ -142,6 +156,7 @@ class MortgageCalculationView(APIView):
             # Create mortgage calculator instance
             calculator = MortgageCalculator(
                 loan_amount=validated_data['loan_amount'],
+                current_loan_amount=validated_data['current_loan_amount'],
                 original_date=validated_data['original_date'],
                 interest_rate=validated_data['interest_rate'],
                 loan_term_years=validated_data['loan_term_years']
@@ -149,7 +164,8 @@ class MortgageCalculationView(APIView):
             
             # Calculate standard mortgage details
             monthly_payment = calculator.calculate_standard_payment()
-            total_interest = calculator.calculate_total_interest()
+            remaining_interest = calculator.calculate_total_remaining_interest()
+            original_total_interest = calculator.calculate_original_total_interest()
             
             # Calculate extra payment scenario if provided
             extra_payment_scenario = calculator.calculate_extra_payment_scenarios(
@@ -159,7 +175,8 @@ class MortgageCalculationView(APIView):
             # Prepare response
             response_data = {
                 'monthly_payment': monthly_payment,
-                'total_interest': total_interest,
+                'original_total_interest': original_total_interest,
+                'remaining_interest': remaining_interest,
                 'extra_payment_scenario': extra_payment_scenario
             }
             
@@ -167,27 +184,11 @@ class MortgageCalculationView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# mortgage/urls.py
-from django.urls import path
-from .views import MortgageCalculationView
-
-urlpatterns = [
-    path('calculate/', MortgageCalculationView.as_view(), name='mortgage-calculation'),
-]
-
-# mortgage_project/urls.py
-from django.contrib import admin
-from django.urls import path, include
-
-urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/mortgage/', include('mortgage.urls')),
-]
-
 # Example request payload
 """
 {
     "loan_amount": 300000,
+    "current_loan_amount": 250000,
     "original_date": "2024-01-01",
     "interest_rate": 6.5,
     "loan_term_years": 30,

@@ -1,152 +1,10 @@
-# mortgage/calculations.py
-import datetime
-import math
+# mortgage/views.py (Added to previous implementation)
+import pandas as pd
 
-class MortgageCalculator:
-    def __init__(self, loan_amount, current_loan_amount, original_date, interest_rate, loan_term_years):
-        """
-        Initialize mortgage calculation parameters
-        
-        :param loan_amount: Original loan amount
-        :param current_loan_amount: Current remaining loan amount
-        :param original_date: Date when mortgage was originated
-        :param interest_rate: Annual interest rate (as a percentage)
-        :param loan_term_years: Loan term in years
-        """
-        self.original_loan_amount = float(loan_amount)
-        self.current_loan_amount = float(current_loan_amount)
-        self.original_date = original_date
-        self.interest_rate = float(interest_rate) / 100  # Convert to decimal
-        self.loan_term_years = int(loan_term_years)
-        
-        # Monthly calculations
-        self.monthly_rate = self.interest_rate / 12
-        self.total_months = self.loan_term_years * 12
-    
-    def calculate_standard_payment(self):
-        """
-        Calculate standard monthly mortgage payment based on current loan amount
-        """
-        monthly_payment = self.current_loan_amount * (
-            self.monthly_rate * (1 + self.monthly_rate) ** self._remaining_months()
-        ) / ((1 + self.monthly_rate) ** self._remaining_months() - 1)
-        return round(monthly_payment, 2)
-    
-    def _remaining_months(self):
-        """
-        Calculate remaining months based on original and current loan amount
-        """
-        # Calculate how many months have passed and remaining months
-        months_paid = round(
-            (self.original_loan_amount - self.current_loan_amount) / 
-            (self.original_loan_amount / self.total_months)
-        )
-        return max(self.total_months - months_paid, 1)
-    
-    def calculate_total_remaining_interest(self):
-        """
-        Calculate total interest to be paid from current point
-        """
-        monthly_payment = self.calculate_standard_payment()
-        remaining_months = self._remaining_months()
-        
-        total_paid = monthly_payment * remaining_months
-        total_interest = total_paid - self.current_loan_amount
-        return round(total_interest, 2)
-    
-    def calculate_original_total_interest(self):
-        """
-        Calculate total interest that would have been paid on original schedule
-        """
-        original_monthly_payment = self.original_loan_amount * (
-            self.monthly_rate * (1 + self.monthly_rate) ** self.total_months
-        ) / ((1 + self.monthly_rate) ** self.total_months - 1)
-        
-        total_paid = original_monthly_payment * self.total_months
-        total_interest = total_paid - self.original_loan_amount
-        return round(total_interest, 2)
-    
-    def calculate_extra_payment_scenarios(self, extra_monthly_payment):
-        """
-        Calculate scenarios with extra monthly payments
-        
-        :param extra_monthly_payment: Additional amount paid monthly
-        :return: Dictionary of extra payment scenarios
-        """
-        standard_monthly_payment = self.calculate_standard_payment()
-        total_monthly_payment = standard_monthly_payment + extra_monthly_payment
-        
-        # Remaining balance tracker
-        remaining_balance = self.current_loan_amount
-        month_count = 0
-        total_interest_paid = 0
-        
-        while remaining_balance > 0:
-            # Calculate interest for the month
-            monthly_interest = remaining_balance * self.monthly_rate
-            total_interest_paid += monthly_interest
-            
-            # Apply payment
-            principal_payment = total_monthly_payment - monthly_interest
-            remaining_balance -= principal_payment
-            
-            month_count += 1
-            
-            # Prevent infinite loop
-            if month_count > (self.loan_term_years * 12 * 2):
-                break
-        
-        # Calculate time saved and total interest saved
-        original_remaining_interest = self.calculate_total_remaining_interest()
-        months_saved = self._remaining_months() - month_count
-        interest_saved = original_remaining_interest - total_interest_paid
-        
-        return {
-            'new_payoff_time_months': month_count,
-            'new_payoff_time_years': round(month_count / 12, 2),
-            'months_saved': max(months_saved, 0),
-            'current_remaining_interest': round(original_remaining_interest, 2),
-            'total_interest_paid_with_extra': round(total_interest_paid, 2),
-            'total_interest_saved': round(interest_saved, 2)
-        }
-
-# mortgage/serializers.py
-from rest_framework import serializers
-
-class MortgageCalculationSerializer(serializers.Serializer):
-    loan_amount = serializers.FloatField()
-    current_loan_amount = serializers.FloatField()
-    original_date = serializers.DateField()
-    interest_rate = serializers.FloatField()
-    loan_term_years = serializers.IntegerField()
-    extra_monthly_payment = serializers.FloatField(required=False, default=0)
-    
-    def validate(self, data):
-        """
-        Additional validation for mortgage calculation inputs
-        """
-        if data['loan_term_years'] not in [15, 20, 30]:
-            raise serializers.ValidationError("Loan term must be 15, 20, or 30 years")
-        
-        if data['interest_rate'] <= 0 or data['interest_rate'] > 30:
-            raise serializers.ValidationError("Interest rate must be between 0 and 30")
-        
-        if data['current_loan_amount'] > data['loan_amount']:
-            raise serializers.ValidationError("Current loan amount cannot be greater than original loan amount")
-        
-        return data
-
-# mortgage/views.py
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from .serializers import MortgageCalculationSerializer
-from .calculations import MortgageCalculator
-
-class MortgageCalculationView(APIView):
+class MortgageAmortizationScheduleView(APIView):
     def post(self, request):
         """
-        Handle mortgage calculation POST request
+        Generate full amortization schedule
         """
         serializer = MortgageCalculationSerializer(data=request.data)
         
@@ -162,27 +20,87 @@ class MortgageCalculationView(APIView):
                 loan_term_years=validated_data['loan_term_years']
             )
             
-            # Calculate standard mortgage details
-            monthly_payment = calculator.calculate_standard_payment()
-            remaining_interest = calculator.calculate_total_remaining_interest()
-            original_total_interest = calculator.calculate_original_total_interest()
-            
-            # Calculate extra payment scenario if provided
-            extra_payment_scenario = calculator.calculate_extra_payment_scenarios(
-                validated_data.get('extra_monthly_payment', 0)
+            # Generate amortization schedules
+            standard_schedule = self._generate_amortization_schedule(
+                calculator, 
+                extra_payment=0
             )
+            
+            # Generate schedule with extra payment if provided
+            extra_payment = validated_data.get('extra_monthly_payment', 0)
+            extra_payment_schedule = self._generate_amortization_schedule(
+                calculator, 
+                extra_payment=extra_payment
+            ) if extra_payment > 0 else None
             
             # Prepare response
             response_data = {
-                'monthly_payment': monthly_payment,
-                'original_total_interest': original_total_interest,
-                'remaining_interest': remaining_interest,
-                'extra_payment_scenario': extra_payment_scenario
+                'standard_schedule': standard_schedule,
+                'extra_payment_schedule': extra_payment_schedule
             }
             
             return Response(response_data, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def _generate_amortization_schedule(self, calculator, extra_payment=0):
+        """
+        Generate detailed amortization schedule
+        
+        :param calculator: MortgageCalculator instance
+        :param extra_payment: Additional monthly payment
+        :return: List of monthly payment details
+        """
+        # Get base monthly payment
+        monthly_payment = calculator.calculate_standard_payment()
+        total_monthly_payment = monthly_payment + extra_payment
+        
+        # Initialize tracking variables
+        remaining_balance = calculator.current_loan_amount
+        month_count = 0
+        schedule = []
+        
+        while remaining_balance > 0:
+            # Calculate interest for the month
+            monthly_interest = remaining_balance * calculator.monthly_rate
+            
+            # Calculate principal payment
+            principal_payment = total_monthly_payment - monthly_interest
+            
+            # Prevent overpayment
+            if principal_payment > remaining_balance:
+                principal_payment = remaining_balance
+                total_monthly_payment = principal_payment + monthly_interest
+            
+            # Update remaining balance
+            remaining_balance -= principal_payment
+            
+            # Prepare month's data
+            month_data = {
+                'month': month_count + 1,
+                'payment': round(total_monthly_payment, 2),
+                'principal': round(principal_payment, 2),
+                'interest': round(monthly_interest, 2),
+                'remaining_balance': round(max(remaining_balance, 0), 2)
+            }
+            schedule.append(month_data)
+            
+            month_count += 1
+            
+            # Prevent infinite loop
+            if month_count > (calculator.loan_term_years * 12 * 2):
+                break
+        
+        return schedule
+
+# mortgage/urls.py (Update to include new view)
+from django.urls import path
+from .views import MortgageCalculationView, MortgageAmortizationScheduleView
+
+urlpatterns = [
+    path('calculate/', MortgageCalculationView.as_view(), name='mortgage-calculation'),
+    path('amortization/', MortgageAmortizationScheduleView.as_view(), name='mortgage-amortization'),
+]
 
 # Example request payload
 """
@@ -195,3 +113,29 @@ class MortgageCalculationView(APIView):
     "extra_monthly_payment": 200
 }
 """
+
+# Optional: CSV Export Utility (mortgage/utils.py)
+import csv
+from django.http import HttpResponse
+
+def export_amortization_schedule_to_csv(schedule, filename='amortization_schedule.csv'):
+    """
+    Utility function to export amortization schedule to CSV
+    
+    :param schedule: List of monthly payment dictionaries
+    :param filename: Name of the CSV file
+    :return: HttpResponse with CSV file
+    """
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    
+    # Create CSV writer
+    writer = csv.DictWriter(response, 
+        fieldnames=['month', 'payment', 'principal', 'interest', 'remaining_balance']
+    )
+    
+    # Write headers and rows
+    writer.writeheader()
+    writer.writerows(schedule)
+    
+    return response

@@ -1,199 +1,242 @@
 <template>
-  <card>
-    <h5 slot="header" class="title">Mortgage Calculator</h5>
-    
-    <form @submit.prevent="submitMortgageData">
-      <!-- Previous input fields remain the same -->
+  <div class="mortgage-calculator">
+    <div class="input-section">
+      <!-- Mortgage Input Fields -->
+      <input v-model.number="loanAmount" type="number" placeholder="Loan Amount" />
+      <input v-model.number="interestRate" type="number" placeholder="Interest Rate (%)" step="0.01" />
+      <input v-model.number="loanTermYears" type="number" placeholder="Loan Term (Years)" />
+      <input v-model.number="extraPayment" type="number" placeholder="Extra Monthly Payment" />
+      
+      <button @click="calculateAmortization">Calculate Amortization</button>
+    </div>
 
-      <base-button @click="submitPayAheadEstimator" native-type="button" type="primary" class="btn-fill">
-        Pay Ahead Estimator
-      </base-button>
-      <!-- Other buttons remain the same -->
-    </form>
+    <div class="display-options">
+      <button @click="displayMode = 'graph'">Graph View</button>
+      <button @click="displayMode = 'table'">Table View</button>
+    </div>
 
-    <!-- Output Section with Explicit Rendering -->
-    <div v-if="showResults" class="calculation-results mt-4">
-      <h4 class="text-center mb-4">Mortgage Optimization Results</h4>
-      <div class="row">
-        <div class="col-md-4 mb-3">
-          <div class="result-card">
-            <div class="result-icon">
-              <i class="tim-icons icon-money-coins"></i>
-            </div>
-            <div class="result-content">
-              <h5>Remaining Interest</h5>
-              <p class="text-primary">{{ formattedRemainingInterest }}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-4 mb-3">
-          <div class="result-card">
-            <div class="result-icon">
-              <i class="tim-icons icon-calendar-60"></i>
-            </div>
-            <div class="result-content">
-              <h5>Months Saved</h5>
-              <p class="text-success">{{ monthsSaved }} months</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-4 mb-3">
-          <div class="result-card">
-            <div class="result-icon">
-              <i class="tim-icons icon-time-alarm"></i>
-            </div>
-            <div class="result-content">
-              <h5>New Payoff Time</h5>
-              <p class="text-warning">
-                {{ newPayoffTimeMonths }} months 
-                ({{ newPayoffTimeYears }} years)
-              </p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-4 mb-3">
-          <div class="result-card">
-            <div class="result-icon">
-              <i class="tim-icons icon-paper"></i>
-            </div>
-            <div class="result-content">
-              <h5>Total Interest Paid</h5>
-              <p class="text-danger">{{ formattedTotalInterestPaid }}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-4 mb-3">
-          <div class="result-card">
-            <div class="result-icon">
-              <i class="tim-icons icon-coins"></i>
-            </div>
-            <div class="result-content">
-              <h5>Total Interest Saved</h5>
-              <p class="text-success">{{ formattedTotalInterestSaved }}</p>
-            </div>
-          </div>
-        </div>
-        
-        <div class="col-md-4 mb-3">
-          <div class="result-card">
-            <div class="result-icon">
-              <i class="tim-icons icon-chart-bar-32"></i>
-            </div>
-            <div class="result-content">
-              <h5>Optimization Summary</h5>
-              <p>
-                By making extra payments, you can save 
-                <span class="text-success">{{ formattedTotalInterestSaved }}</span> 
-                and shorten your loan by 
-                <span class="text-warning">{{ monthsSaved }} months</span>.
-              </p>
-            </div>
-          </div>
-        </div>
+    <!-- Graph View -->
+    <div v-if="displayMode === 'graph' && regularSchedule.length" class="graph-container">
+      <Line 
+        :data="chartData" 
+        :options="chartOptions"
+      />
+    </div>
+
+    <!-- Table View -->
+    <div v-if="displayMode === 'table' && regularSchedule.length" class="table-container">
+      <h3>Regular Payment Schedule</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Payment</th>
+            <th>Principal</th>
+            <th>Interest</th>
+            <th>Remaining Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(payment, index) in regularSchedule" :key="`regular-${index}`">
+            <td>{{ payment.month }}</td>
+            <td>{{ payment.payment.toFixed(2) }}</td>
+            <td>{{ payment.principal.toFixed(2) }}</td>
+            <td>{{ payment.interest.toFixed(2) }}</td>
+            <td>{{ payment.remainingBalance.toFixed(2) }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div v-if="extraSchedule.length">
+        <h3>Extra Payment Schedule</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Payment</th>
+              <th>Principal</th>
+              <th>Interest</th>
+              <th>Remaining Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(payment, index) in extraSchedule" :key="`extra-${index}`">
+              <td>{{ payment.month }}</td>
+              <td>{{ payment.payment.toFixed(2) }}</td>
+              <td>{{ payment.principal.toFixed(2) }}</td>
+              <td>{{ payment.interest.toFixed(2) }}</td>
+              <td>{{ payment.remainingBalance.toFixed(2) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
-  </card>
+  </div>
 </template>
 
 <script>
-import axios from 'axios';
-import Vue from 'vue';
+import { Line } from 'vue-chartjs'
+import { 
+  Chart as ChartJS, 
+  Title, 
+  Tooltip, 
+  Legend, 
+  LineElement, 
+  LinearScale, 
+  PointElement, 
+  CategoryScale 
+} from 'chart.js'
+
+ChartJS.register(
+  Title, 
+  Tooltip, 
+  Legend, 
+  LineElement, 
+  LinearScale, 
+  PointElement, 
+  CategoryScale
+)
 
 export default {
+  components: { Line },
   data() {
     return {
-      original_loan: '',
-      current_loan: '',
-      closing_date: '',
-      interest_rate: '',
-      loan_term: '',
-      extra_monthly: '',
-      
-      // Explicit reactive properties for results
-      showResults: false,
-      remainingInterest: 0,
-      monthsSaved: 0,
-      newPayoffTimeMonths: 0,
-      newPayoffTimeYears: 0,
-      totalInterestPaid: 0,
-      totalInterestSaved: 0
-    };
+      loanAmount: 300000,
+      interestRate: 4.5,
+      loanTermYears: 30,
+      extraPayment: 0,
+      displayMode: 'graph',
+      regularSchedule: [],
+      extraSchedule: []
+    }
   },
   computed: {
-    // Computed properties for formatted values
-    formattedRemainingInterest() {
-      return this.formatCurrency(this.remainingInterest);
+    chartData() {
+      return {
+        labels: this.regularSchedule.map(payment => `Month ${payment.month}`),
+        datasets: [
+          {
+            label: 'Remaining Balance (Regular)',
+            data: this.regularSchedule.map(payment => payment.remainingBalance),
+            borderColor: 'blue',
+            tension: 0.1
+          },
+          ...(this.extraSchedule.length ? [{
+            label: 'Remaining Balance (Extra Payments)',
+            data: this.extraSchedule.map(payment => payment.remainingBalance),
+            borderColor: 'green',
+            tension: 0.1
+          }] : [])
+        ]
+      }
     },
-    formattedTotalInterestPaid() {
-      return this.formatCurrency(this.totalInterestPaid);
-    },
-    formattedTotalInterestSaved() {
-      return this.formatCurrency(this.totalInterestSaved);
+    chartOptions() {
+      return {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: false,
+            title: {
+              display: true,
+              text: 'Remaining Balance ($)'
+            }
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Months'
+            }
+          }
+        }
+      }
     }
   },
   methods: {
-    formatCurrency(value) {
-      // Ensure value is a number
-      const num = parseFloat(value);
+    calculateAmortization() {
+      // Regular Payment Schedule Calculation
+      this.regularSchedule = this.calculateSchedule(this.loanAmount, this.interestRate, this.loanTermYears, 0)
       
-      // Check if it's a valid number
-      if (isNaN(num)) return '$0.00';
-      
-      // Format as currency
-      return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }).format(num);
+      // Extra Payment Schedule Calculation (if extra payment > 0)
+      this.extraSchedule = this.extraPayment > 0 
+        ? this.calculateSchedule(this.loanAmount, this.interestRate, this.loanTermYears, this.extraPayment)
+        : []
     },
+    calculateSchedule(principal, annualRate, termYears, extraPayment) {
+      const monthlyRate = annualRate / 100 / 12
+      const totalMonths = termYears * 12
+      const regularPayment = principal * 
+        (monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / 
+        (Math.pow(1 + monthlyRate, totalMonths) - 1)
 
-    async submitPayAheadEstimator() {
-      try {
-        const params = this.validateInputs();
+      let schedule = []
+      let currentBalance = principal
+      let month = 1
+
+      while (currentBalance > 0 && month <= totalMonths) {
+        // Calculate interest and principal for this month
+        const monthlyInterest = currentBalance * monthlyRate
+        const monthlyPrincipal = regularPayment - monthlyInterest + extraPayment
+
+        // Adjust final payment if needed
+        const payment = Math.min(currentBalance + monthlyInterest, regularPayment + extraPayment)
         
-        const response = await axios({
-          method: 'post',
-          url: 'http://localhost:8000/api/pay-ahead-estimator/',
-          data: params,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
+        // Update balance
+        currentBalance = Math.max(0, currentBalance - (payment - monthlyInterest))
 
-        console.log('Full API Response:', response.data);
+        // Add to schedule
+        schedule.push({
+          month,
+          payment,
+          principal: monthlyPrincipal,
+          interest: monthlyInterest,
+          remainingBalance: currentBalance
+        })
 
-        // Explicitly update reactive properties
-        // Use Vue.set to ensure reactivity for nested updates
-        this.showResults = true;
-        
-        // Use Vue.set or this.$set to ensure reactivity
-        Vue.set(this, 'remainingInterest', response.data.remaining_interest || 0);
-        Vue.set(this, 'monthsSaved', response.data.months_saved || 0);
-        Vue.set(this, 'newPayoffTimeMonths', response.data.new_payoff_time_months || 0);
-        Vue.set(this, 'newPayoffTimeYears', response.data.new_payoff_time_years || 0);
-        Vue.set(this, 'totalInterestPaid', response.data.total_interest_paid || 0);
-        Vue.set(this, 'totalInterestSaved', response.data.total_interest_saved || 0);
-
-        // Force update if needed
-        this.$forceUpdate();
-
-      } catch (error) {
-        // Error handling remains the same as previous example
-        console.error('Error in API call:', error);
-        this.showResults = false;
+        month++
       }
-    },
 
-    // Other methods remain the same
+      return schedule
+    }
   }
-};
+}
 </script>
 
 <style scoped>
-/* Previous styling remains the same */
+.mortgage-calculator {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.input-section {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.input-section input {
+  flex: 1;
+  padding: 8px;
+}
+
+.display-options {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.table-container table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table-container th, 
+.table-container td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: right;
+}
+
+.graph-container {
+  height: 400px;
+}
 </style>

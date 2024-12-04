@@ -1,136 +1,264 @@
 ```vue
 <template>
-  <div class="amortization-schedule-container">
-    <!-- Viewing Mode Selector -->
-    <div class="view-mode-selector mb-3">
-      <base-button 
-        @click="currentView = 'graph'"
-        :class="{ 'btn-primary': currentView === 'graph', 'btn-outline-primary': currentView !== 'graph' }"
-      >
-        Graphical View
-      </base-button>
-      <base-button 
-        @click="currentView = 'table'"
-        :class="{ 'btn-primary': currentView === 'table', 'btn-outline-primary': currentView !== 'table' }"
-      >
-        Tabular View
-      </base-button>
+  <card>
+    <h5 slot="header" class="title">Mortgage Calculator</h5>
+    
+    <form @submit.prevent="submitMortgageData">
+      <!-- Input Fields -->
+      <div class="row">
+        <div class="col-md-4">
+          <base-input
+            label="Original Loan Amount"
+            type="number"
+            v-model="original_loan"
+            placeholder="Enter loan amount"
+            required
+          />
+        </div>
+        <div class="col-md-4">
+          <base-input
+            label="Current Loan Balance"
+            type="number"
+            v-model="current_loan"
+            placeholder="Enter current balance"
+            required
+          />
+        </div>
+        <div class="col-md-4">
+          <base-input
+            label="Closing Date"
+            type="date"
+            v-model="closing_date"
+            required
+          />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-4">
+          <base-input
+            label="Interest Rate (%)"
+            type="number"
+            step="0.01"
+            v-model="interest_rate"
+            placeholder="Enter interest rate"
+            required
+          />
+        </div>
+        <div class="col-md-4">
+          <base-input
+            label="Loan Term (Months)"
+            type="number"
+            v-model="loan_term"
+            placeholder="Enter loan term"
+            required
+          />
+        </div>
+        <div class="col-md-4">
+          <base-input
+            label="Extra Monthly Payment"
+            type="number"
+            v-model="extra_monthly"
+            placeholder="Enter extra payment"
+          />
+        </div>
+      </div>
+
+      <!-- Buttons -->
+      <div class="button-container">
+        <base-button 
+          @click="submitPayAheadEstimator" 
+          native-type="button" 
+          type="primary" 
+          class="btn-fill"
+        >
+          Pay Ahead Estimator
+        </base-button>
+
+        <base-button 
+          @click="fetchAmortizationSchedule" 
+          native-type="button" 
+          type="info" 
+          class="btn-fill"
+        >
+          View Amortization Schedule
+        </base-button>
+      </div>
+    </form>
+
+    <!-- Pay Ahead Results Section -->
+    <div v-if="showResults" class="calculation-results mt-4">
+      <h4 class="text-center mb-4">Mortgage Optimization Results</h4>
+      <div class="row">
+        <!-- Existing result cards remain the same -->
+        <!-- ... (previous result cards) ... -->
+      </div>
     </div>
 
-    <!-- Graph View -->
-    <div v-if="currentView === 'graph'" class="graph-container">
-      <line-chart 
-        :chart-data="chartData" 
-        :options="chartOptions"
-      />
-    </div>
-
-    <!-- Table View -->
-    <div v-if="currentView === 'table'" class="table-container">
-      <table class="table table-striped table-responsive">
-        <thead>
-          <tr>
-            <th>Month</th>
-            <th>Payment</th>
-            <th>Principal</th>
-            <th>Interest</th>
-            <th>Remaining Balance</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr 
-            v-for="(payment, index) in combinedSchedule" 
-            :key="index"
-            :class="{
-              'table-info': payment.type === 'extra_payment',
-              'table-default': payment.type === 'regular'
-            }"
-          >
-            <td>{{ payment.month }}</td>
-            <td>{{ formatCurrency(payment.payment) }}</td>
-            <td>{{ formatCurrency(payment.principal) }}</td>
-            <td>{{ formatCurrency(payment.interest) }}</td>
-            <td>{{ formatCurrency(payment.remaining_balance) }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
+    <!-- Amortization Schedule Modal -->
+    <modal 
+      v-if="showAmortizationSchedule" 
+      @close="showAmortizationSchedule = false"
+    >
+      <template slot="header">
+        <h4 class="modal-title">Amortization Schedule</h4>
+      </template>
+      
+      <template slot="body">
+        <amortization-schedule-component 
+          :schedule-data="amortizationScheduleData"
+          @close="showAmortizationSchedule = false"
+        />
+      </template>
+    </modal>
+  </card>
 </template>
 
 <script>
-import Vue from 'vue';
-import { Line } from 'vue-chartjs';
 import axios from 'axios';
+import Vue from 'vue';
+import AmortizationScheduleComponent from './AmortizationScheduleComponent.vue'; // New component
 
 export default {
   components: {
-    'line-chart': Line
+    AmortizationScheduleComponent
   },
   data() {
     return {
-      currentView: 'graph',
-      regularSchedule: [],
-      extraPaymentSchedule: [],
-      combinedSchedule: [],
-      chartData: {
-        labels: [],
-        datasets: [
-          {
-            label: 'Remaining Balance (Regular)',
-            borderColor: '#007bff',
-            backgroundColor: 'rgba(0, 123, 255, 0.1)',
-            data: []
-          },
-          {
-            label: 'Remaining Balance (Extra Payment)',
-            borderColor: '#28a745',
-            backgroundColor: 'rgba(40, 167, 69, 0.1)',
-            data: []
-          }
-        ]
-      },
-      chartOptions: {
-        responsive: true,
-        title: {
-          display: true,
-          text: 'Mortgage Amortization Schedule'
-        },
-        scales: {
-          xAxes: [{
-            scaleLabel: {
-              display: true,
-              labelString: 'Months'
-            }
-          }],
-          yAxes: [{
-            scaleLabel: {
-              display: true,
-              labelString: 'Remaining Balance ($)'
-            },
-            ticks: {
-              callback: (value) => this.formatCurrency(value)
-            }
-          }]
-        }
-      }
+      // Existing data properties
+      original_loan: '',
+      current_loan: '',
+      closing_date: '',
+      interest_rate: '',
+      loan_term: '',
+      extra_monthly: '',
+      
+      // Existing results properties
+      showResults: false,
+      remainingInterest: 0,
+      monthsSaved: 0,
+      newPayoffTimeMonths: 0,
+      newPayoffTimeYears: 0,
+      totalInterestPaid: 0,
+      totalInterestSaved: 0,
+
+      // New properties for Amortization Schedule
+      showAmortizationSchedule: false,
+      amortizationScheduleData: null,
+      isLoading: false,
+      errorMessage: ''
     };
   },
+  computed: {
+    // Existing computed properties
+    formattedRemainingInterest() {
+      return this.formatCurrency(this.remainingInterest);
+    },
+    formattedTotalInterestPaid() {
+      return this.formatCurrency(this.totalInterestPaid);
+    },
+    formattedTotalInterestSaved() {
+      return this.formatCurrency(this.totalInterestSaved);
+    }
+  },
   methods: {
+    // Existing methods
     formatCurrency(value) {
-      if (!value && value !== 0) return '$0.00';
+      const num = parseFloat(value);
+      if (isNaN(num)) return '$0.00';
+      
       return new Intl.NumberFormat('en-US', {
         style: 'currency',
         currency: 'USD',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
-      }).format(value);
+      }).format(num);
+    },
+
+    validateInputs() {
+      // Comprehensive input validation method
+      const params = {
+        original_loan: parseFloat(this.original_loan.trim().replace(/[^0-9.]/g, '')),
+        current_loan: parseFloat(this.current_loan.trim().replace(/[^0-9.]/g, '')),
+        closing_date: this.closing_date,
+        interest_rate: parseFloat(this.interest_rate),
+        loan_term: parseInt(this.loan_term),
+        extra_monthly: parseFloat(this.extra_monthly.trim().replace(/[^0-9.]/g, '') || '0')
+      };
+
+      const validationErrors = [];
+
+      if (isNaN(params.original_loan) || params.original_loan <= 0) {
+        validationErrors.push('Invalid original loan amount');
+      }
+      if (isNaN(params.current_loan) || params.current_loan <= 0) {
+        validationErrors.push('Invalid current loan amount');
+      }
+      if (isNaN(params.interest_rate) || params.interest_rate <= 0) {
+        validationErrors.push('Invalid interest rate');
+      }
+      if (isNaN(params.loan_term) || params.loan_term <= 0) {
+        validationErrors.push('Invalid loan term');
+      }
+      if (isNaN(params.extra_monthly) || params.extra_monthly < 0) {
+        validationErrors.push('Invalid extra monthly payment');
+      }
+
+      if (validationErrors.length > 0) {
+        console.error('Validation Errors:', validationErrors);
+        throw new Error(validationErrors.join(', '));
+      }
+
+      return params;
+    },
+
+    async submitPayAheadEstimator() {
+      try {
+        const params = this.validateInputs();
+        
+        this.showResults = false;
+        this.isLoading = true;
+
+        const response = await axios({
+          method: 'post',
+          url: 'http://localhost:8000/api/pay-ahead-estimator/',
+          data: params,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+
+        this.updatePayAheadResults(response.data);
+
+      } catch (error) {
+        console.error('Error in API call:', error);
+        this.errorMessage = error.response?.data?.message || 
+                            error.message || 
+                            'An unexpected error occurred';
+        this.displayErrorNotification(this.errorMessage);
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+    updatePayAheadResults(data) {
+      this.showResults = true;
+      
+      this.remainingInterest = data.remaining_interest || 0;
+      this.monthsSaved = data.months_saved || 0;
+      this.newPayoffTimeMonths = data.new_payoff_time_months || 0;
+      this.newPayoffTimeYears = data.new_payoff_time_years || 0;
+      this.totalInterestPaid = data.total_interest_paid || 0;
+      this.totalInterestSaved = data.total_interest_saved || 0;
     },
 
     async fetchAmortizationSchedule() {
       try {
-        const params = this.validateInputs(); // Reuse existing validation method
+        const params = this.validateInputs();
         
+        this.isLoading = true;
+        this.errorMessage = '';
+
         const response = await axios({
           method: 'post',
           url: 'http://localhost:8000/api/amortization-schedule/',
@@ -140,97 +268,41 @@ export default {
           }
         });
 
-        // Process schedules
-        this.processSchedules(response.data);
+        // Store schedule data and show modal
+        this.amortizationScheduleData = response.data;
+        this.showAmortizationSchedule = true;
+
       } catch (error) {
         console.error('Error fetching amortization schedule:', error);
-        // Implement error handling (toast/notification)
+        this.errorMessage = error.response?.data?.message || 
+                            error.message || 
+                            'Unable to fetch amortization schedule';
+        this.displayErrorNotification(this.errorMessage);
+      } finally {
+        this.isLoading = false;
       }
     },
 
-    processSchedules(data) {
-      // Regular schedule is always present
-      this.regularSchedule = (data.regular_schedule || []).map(payment => ({
-        ...payment,
-        type: 'regular'
-      }));
-
-      // Extra payment schedule is optional
-      this.extraPaymentSchedule = (data.extra_payment_schedule || []).map(payment => ({
-        ...payment,
-        type: 'extra_payment'
-      }));
-
-      // Combine schedules, prioritizing extra payment schedule if exists
-      this.combinedSchedule = this.extraPaymentSchedule.length > 0 
-        ? this.extraPaymentSchedule 
-        : this.regularSchedule;
-
-      // Prepare chart data
-      this.prepareChartData();
-    },
-
-    prepareChartData() {
-      // Reset chart data
-      this.chartData.labels = [];
-      this.chartData.datasets[0].data = [];
-      this.chartData.datasets[1].data = [];
-
-      // Populate regular schedule data
-      this.regularSchedule.forEach((payment, index) => {
-        this.chartData.labels.push(index + 1);
-        this.chartData.datasets[0].data.push(payment.remaining_balance);
-      });
-
-      // If extra payment schedule exists, add it to the chart
-      if (this.extraPaymentSchedule.length > 0) {
-        this.extraPaymentSchedule.forEach((payment, index) => {
-          // Ensure we don't duplicate labels
-          if (index >= this.chartData.labels.length) {
-            this.chartData.labels.push(index + 1);
-          }
-          this.chartData.datasets[1].data.push(payment.remaining_balance);
-        });
-      }
-
-      // Force chart update
-      this.$nextTick(() => {
-        this.$refs.chart.update();
-      });
+    displayErrorNotification(message) {
+      // Implement using your UI framework's toast/notification system
+      // This is a placeholder - replace with actual notification method
+      alert(message);
     }
-  },
-  mounted() {
-    // Optionally trigger fetch on component mount
-    // Or bind to a button click in parent component
-    this.fetchAmortizationSchedule();
   }
-}
+};
 </script>
 
 <style scoped>
-.amortization-schedule-container {
-  padding: 20px;
-}
-
-.view-mode-selector {
+.button-container {
   display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 20px;
+  justify-content: space-between;
+  margin-top: 20px;
 }
 
-.graph-container, .table-container {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
+.calculation-results {
+  margin-top: 20px;
 }
 
-.table {
-  font-size: 0.9rem;
-}
-
-.table-info {
-  background-color: rgba(0, 123, 255, 0.1);
-}
+/* Additional styling as needed */
 </style>
 ```

@@ -1,46 +1,77 @@
-<script>
-import axios from 'axios';
+<template>
+  <card>
+    <h5 slot="header" class="title">Mortgage Calculator</h5>
+    <form @submit.prevent="updateProfile">
+      <div class="row">
+        <div class="col-md-4">
+          <base-input
+            type="text"
+            label="Original Loan Amount"
+            placeholder="$100,000"
+            v-model="original_loan"
+          >
+          </base-input>
+        </div>
+        <div class="col-md-4">
+          <base-input
+            type="text"
+            label="Current Loan Amount"
+            placeholder="$100,000"
+            v-model="current_loan"
+          >
+          </base-input>
+        </div>
+        <div class="col-md-4">
+          <base-input
+            type="text"
+            label="Closing Date"
+            placeholder="2021-12-12"
+            v-model="closing_date"
+          >
+          </base-input>
+        </div>
+      </div>
 
-export default {
-  methods: {
-    async submitData() {
-      // Assuming these are the 6 parameters you want to send
-      const params = {
-        param1: this.param1,
-        param2: this.param2,
-        param3: this.param3,
-        param4: this.param4,
-        param5: this.param5,
-        param6: this.param6
-      };
+      <div class="row">
+        <div class="col-md-4">
+          <base-input
+            type="text"
+            label="Interest Rate"
+            placeholder="4%"
+            v-model="interest_rate"
+          >
+          </base-input>
+        </div>
+        <div class="col-md-4">
+          <base-input
+            type="text"
+            label="Loan Term Years"
+            placeholder="30"
+            v-model="loan_term"
+          >
+          </base-input>
+        </div>
+        <div class="col-md-4">
+          <base-input
+            type="text"
+            label="Extra Monthly Payments"
+            placeholder="$300"
+            v-model="extra_monthly"
+          >
+          </base-input>
+        </div>
+      </div>
 
-      try {
-        // Replace with your actual Django API endpoint
-        const response = await axios.post('http://your-django-backend-url/your-endpoint/', params);
-        
-        // Log the response to the console
-        console.log('API Response:', response.data);
-        
-        // Optional: Handle successful response
-        // You might want to update component state, show a success message, etc.
-      } catch (error) {
-        // Error handling
-        console.error('API Call Error:', error);
-        
-        // Optional: Handle error (show error message, etc.)
-        if (error.response) {
-          // The request was made and the server responded with a status code
-          console.error('Error response:', error.response.data);
-          console.error('Error status:', error.response.status);
-        } else if (error.request) {
-          // The request was made but no response was received
-          console.error('No response received:', error.request);
-        } else {
-          // Something happened in setting up the request
-          console.error('Error setting up request:', error.message);
-        }
-      }
-    }
-  }
-}
-</script>
+
+      <base-button native-type="submit" type="primary" class="btn-fill">
+        Pay Ahead Estimator
+      </base-button>
+      <base-button native-type="submit" type="primary" class="btn-fill">
+        Amortization Schedule
+      </base-button>
+      <base-button native-type="submit" type="primary" class="btn-fill">
+        Advanced Analytics
+      </base-button>
+    </form>
+  </card>
+</template>

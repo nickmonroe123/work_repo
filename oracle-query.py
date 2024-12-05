@@ -1,325 +1,304 @@
 import pytest
-import msgspec
+import json
+import re
+from unittest.mock import Mock, patch
+import logging
 
 from your_module import (
-    IdentifiedAccount,
-    GeneralRequest,
-    Description,
-    InternalRecord,
-    OracleDESRecord,
-    Name,
-    PhoneNumber,
+    AccountProcess, 
+    FullIdentifier, 
+    Name, 
+    PhoneNumber, 
     Address,
-    FullIdentifier
+    InternalRecord,
+    IdentifiedAccount
 )
 
-# Name Struct Tests
-def test_name_struct():
-    # Basic full name
-    name1 = Name(first_name="John", last_name="Doe")
-    assert name1.first_name == "John"
-    assert name1.last_name == "Doe"
-    assert name1.middle_name == ""
-    assert name1.suffix == ""
-    assert name1.prefix == ""
-
-    # Full name with all optional fields
-    name2 = Name(
-        first_name="John", 
-        last_name="Smith", 
-        middle_name="Michael", 
-        suffix="Jr.", 
-        prefix="Dr."
+# Utility function to create a test FullIdentifier
+def create_test_full_identifier(
+    first_name="John", 
+    last_name="Doe", 
+    phone_number="5551234567", 
+    street_line1="123 Main St", 
+    city="Anytown", 
+    state="NY", 
+    postal_code="12345",
+    email="john.doe@example.com"
+):
+    return FullIdentifier(
+        name=Name(first_name=first_name, last_name=last_name),
+        phone_number=PhoneNumber(
+            area_code=phone_number[:3], 
+            exchange=phone_number[3:6], 
+            line_number=phone_number[6:]
+        ),
+        address=Address(
+            line1=street_line1, 
+            city=city, 
+            state=state, 
+            postal_code=postal_code
+        ),
+        email=email
     )
-    assert name2.first_name == "John"
-    assert name2.last_name == "Smith"
-    assert name2.middle_name == "Michael"
-    assert name2.suffix == "Jr."
-    assert name2.prefix == "Dr."
 
-    # Edge cases
-    with pytest.raises(TypeError):
-        Name()  # Missing required fields
+# Phone Parsing Tests
+def test_phone_parse():
+    account_process = AccountProcess()
 
-    # Unicode names
-    name3 = Name(first_name="José", last_name="González")
-    assert name3.first_name == "José"
-    assert name3.last_name == "González"
-
-# PhoneNumber Struct Tests
-def test_phone_number_struct():
-    # Complete phone number
-    phone1 = PhoneNumber(
+    # Test standard phone number
+    phone = PhoneNumber(
         country_code="1", 
-        area_code="123", 
-        exchange="456", 
-        line_number="7890",
-        extension="123",
-        type_code="mobile"
+        area_code="555", 
+        exchange="123", 
+        line_number="4567"
     )
-    assert phone1.country_code == "1"
-    assert phone1.area_code == "123"
-    assert phone1.exchange == "456"
-    assert phone1.line_number == "7890"
-    assert phone1.extension == "123"
-    assert phone1.type_code == "mobile"
+    assert account_process.phone_parse(phone) == "5551234567"
 
-    # Minimal phone number
-    phone2 = PhoneNumber(line_number="5551234")
-    assert phone2.line_number == "5551234"
-    assert phone2.country_code == ""
-    assert phone2.area_code == ""
-
-    # International phone numbers
-    phone3 = PhoneNumber(
-        country_code="44", 
-        area_code="20", 
-        line_number="12345678"
+    # Test phone number with formatting
+    phone_formatted = PhoneNumber(
+        country_code="1", 
+        area_code="(555)", 
+        exchange="123", 
+        line_number="4567"
     )
-    assert phone3.country_code == "44"
-    assert phone3.area_code == "20"
-    assert phone3.line_number == "12345678"
+    assert account_process.phone_parse(phone_formatted) == "5551234567"
 
-# Address Struct Tests
-def test_address_struct():
-    # Complete address
-    address1 = Address(
-        city="New York", 
-        state="NY", 
-        line1="123 Main St", 
-        postal_code="10001",
-        line2="Apt 4B",
-        country_code="US"
+    # Test incomplete phone number
+    phone_incomplete = PhoneNumber(
+        area_code="555", 
+        line_number="4567"
     )
-    assert address1.city == "New York"
-    assert address1.state == "NY"
-    assert address1.line1 == "123 Main St"
-    assert address1.postal_code == "10001"
-    assert address1.line2 == "Apt 4B"
-    assert address1.country_code == "US"
+    assert account_process.phone_parse(phone_incomplete) == "5554567"
 
-    # Minimal address
-    address2 = Address(
-        city="Chicago", 
-        state="IL", 
-        line1="456 Oak Rd", 
-        postal_code="60601"
+    # Test empty phone number
+    phone_empty = PhoneNumber()
+    assert account_process.phone_parse(phone_empty) == ""
+
+# Zip and Name Parsing Tests
+def test_zip_name_parse():
+    account_process = AccountProcess()
+
+    # Standard case
+    full_id = create_test_full_identifier(
+        first_name="John", 
+        last_name="Doe", 
+        postal_code="12345"
     )
-    assert address2.line2 == ""
-    assert address2.country_code == ""
+    first_name, last_name, zipcode = account_process.zip_name_parse(full_id)
+    assert first_name == "John"
+    assert last_name == "Doe"
+    assert zipcode == "12345"
 
-    # International addressing
-    address3 = Address(
-        city="Toronto", 
-        state="ON", 
-        line1="789 Maple Ave", 
-        postal_code="M5V 2T6",
-        country_code="CA"
+    # Postal code with extended zip
+    full_id_extended = create_test_full_identifier(
+        first_name="Jane", 
+        last_name="Smith", 
+        postal_code="12345-6789"
     )
-    assert address3.country_code == "CA"
+    first_name, last_name, zipcode = account_process.zip_name_parse(full_id_extended)
+    assert first_name == "Jane"
+    assert last_name == "Smith"
+    assert zipcode == "12345"
 
-    # Edge case: missing required fields
-    with pytest.raises(TypeError):
-        Address(line1="Test Street")
-
-# FullIdentifier Struct Tests
-def test_full_identifier_struct():
-    # Complete full identifier
-    full_id = FullIdentifier(
-        name=Name(first_name="Alice", last_name="Johnson"),
-        phone_number=PhoneNumber(line_number="5551234"),
-        address=Address(
-            city="San Francisco", 
-            state="CA", 
-            line1="789 Tech Lane", 
-            postal_code="94105"
-        ),
-        email="alice.johnson@example.com"
-    )
-    assert full_id.name.first_name == "Alice"
-    assert full_id.phone_number.line_number == "5551234"
-    assert full_id.address.city == "San Francisco"
-    assert full_id.email == "alice.johnson@example.com"
-
-    # Edge cases: minimal information
-    with pytest.raises(TypeError):
-        FullIdentifier()  # Missing all required fields
-
-# GeneralRequest Struct Tests
-def test_general_request_struct():
-    # Full information request
-    request1 = GeneralRequest(
-        country_code="1",
-        phone_number="5551234567",
-        first_name="Bob",
-        last_name="Smith",
-        zipcode5="12345",
-        email_address="bob.smith@example.com",
-        street_number="100",
-        street_name="Main St",
-        city="Anytown",
-        state="NY",
-        apartment="4B"
-    )
-    assert request1.first_name == "Bob"
-    assert request1.zipcode5 == "12345"
-    assert request1.apartment == "4B"
-
-    # Minimal information request
-    request2 = GeneralRequest(first_name="Jane")
-    assert request2.first_name == "Jane"
-    assert request2.phone_number == ""
-    assert request2.zipcode5 == ""
-
-# InternalRecord Struct Tests
-def test_internal_record_struct():
-    # Full internal record
-    record1 = InternalRecord(
-        ucan="12345",
-        division_id="DIV001",
-        account_status="Active",
-        first_name="John",
-        last_name="Doe",
-        _address_line_1="100 Main St",
-        _address_line_2="Apt 4B",
-        city="Anytown",
-        state="NY"
-    )
-    assert record1.ucan == "12345"
-    assert record1.street_number == "100"
-    assert record1.full_address == "100 Main St Apt 4B Anytown NY"
-    assert record1.full_address_no_apt == "100 Main St Anytown NY"
-
-    # Address parsing edge cases
-    record2 = InternalRecord(_address_line_1="")
-    assert record2.street_number == ""
-    assert record2.street_name == ""
-
-# OracleDESRecord Struct Tests
-def test_oracle_des_record_struct():
-    # Full Oracle DES record
-    record1 = OracleDESRecord(
-        ACCT_NUM="98765",
-        PRIMARY_NUMBER="5551234567",
-        ACCT_NAME="Doe,John",
-        PSTL_CD_TXT_BLR="12345",
-        CITY_NM_BLR="Anytown",
-        STATE_NM_BLR="NY",
-        BLR_ADDR1_LINE="100 Main St",
-        BLR_ADDR2_LINE="Apt 4B"
-    )
-    assert record1.account_number == "98765"
-    assert record1.first_name == "John"
-    assert record1.last_name == "Doe"
-    assert record1.full_address == "100 Main St Apt 4B Anytown NY"
-
-    # Name parsing edge cases
-    record2 = OracleDESRecord(ACCT_NAME="SingleName")
-    assert record2.first_name == ""
-    assert record2.last_name == ""
-
-# IdentifiedAccount Struct Tests
-def test_identified_account_struct():
-    # Full identified account
-    account1 = IdentifiedAccount(
-        name=Name(first_name="Alice", last_name="Johnson"),
-        phone_number=PhoneNumber(line_number="5551234"),
-        address=Address(
-            city="San Francisco", 
-            state="CA", 
-            line1="789 Tech Lane", 
-            postal_code="94105"
-        ),
-        email="alice.johnson@example.com",
-        match_score=0.95,
-        account_type="Premium",
-        status="Active",
-        source="Internal",
-        ucan="12345"
-    )
-    assert account1.match_score == 0.95
-    assert account1.account_type == "Premium"
-    assert account1.ucan == "12345"
-
-    # Minimal identified account
-    account2 = IdentifiedAccount(
-        name=Name(first_name="Bob", last_name="Smith"),
+    # Empty name and postal code
+    full_id_empty = FullIdentifier(
+        name=Name(first_name="", last_name=""),
         phone_number=PhoneNumber(),
-        address=Address(
-            city="Anytown", 
-            state="NY", 
-            line1="100 Main St", 
-            postal_code="12345"
-        ),
+        address=Address(city="", state="", line1="", postal_code=""),
         email=""
     )
-    assert account2.match_score == 0.0
-    assert account2.account_type == ""
+    first_name, last_name, zipcode = account_process.zip_name_parse(full_id_empty)
+    assert first_name == ""
+    assert last_name == ""
+    assert zipcode == ""
 
-# Performance and Serialization Tests
-def test_struct_serialization():
-    # Test msgspec serialization and deserialization
-    name = Name(first_name="John", last_name="Doe")
-    encoded = msgspec.json.encode(name)
-    decoded = msgspec.json.decode(encoded, type=Name)
-    assert decoded == name
+# Address Parsing Tests
+def test_address_parse():
+    account_process = AccountProcess()
 
-# Boundary and Stress Tests
-def test_extreme_input_lengths():
-    # Very long inputs
-    long_name = Name(
-        first_name="A" * 100, 
-        last_name="B" * 100, 
-        middle_name="C" * 50, 
-        suffix="D" * 10
+    # Standard address
+    address = Address(line1="123 Main St", city="Anytown", state="NY", line2="Apt 4B")
+    street_number, street_name, city, state, apartment = account_process.address_parse(address)
+    assert street_number == "123"
+    assert street_name == "Main St"
+    assert city == "Anytown"
+    assert state == "NY"
+    assert apartment == "Apt 4B"
+
+    # Address without apartment
+    address_no_apt = Address(line1="456 Oak Rd", city="Smallville", state="CA")
+    street_number, street_name, city, state, apartment = account_process.address_parse(address_no_apt)
+    assert street_number == "456"
+    assert street_name == "Oak Rd"
+    assert city == "Smallville"
+    assert state == "CA"
+    assert apartment == ""
+
+    # Edge case: Street name without number
+    address_no_number = Address(line1="Broadway", city="New York", state="NY")
+    street_number, street_name, city, state, apartment = account_process.address_parse(address_no_number)
+    assert street_number == ""
+    assert street_name == "Broadway"
+    assert city == "New York"
+    assert state == "NY"
+    assert apartment == ""
+
+# Request Initialization Tests
+def test_ext_request_init():
+    account_process = AccountProcess()
+
+    # Full identifier with complete information
+    full_id = create_test_full_identifier()
+    account_process.ext_request_init(full_id)
+
+    assert account_process.ext_request.phone_number == "5551234567"
+    assert account_process.ext_request.first_name == "John"
+    assert account_process.ext_request.last_name == "Doe"
+    assert account_process.ext_request.zipcode5 == "12345"
+    assert account_process.ext_request.email_address == "john.doe@example.com"
+    assert account_process.ext_request.street_number == "123"
+    assert account_process.ext_request.street_name == "Main St"
+    assert account_process.ext_request.city == "Anytown"
+    assert account_process.ext_request.state == "NY"
+
+    # Minimal identifier
+    minimal_id = FullIdentifier(
+        name=Name(first_name="Minimal", last_name="User"),
+        phone_number=PhoneNumber(),
+        address=Address(city="", state="", line1="", postal_code=""),
+        email=""
     )
-    assert len(long_name.first_name) == 100
-    assert len(long_name.last_name) == 100
+    account_process.ext_request_init(minimal_id)
+    assert account_process.ext_request.first_name == "Minimal"
+    assert account_process.ext_request.last_name == "User"
 
-    # Unicode stress test
-    unicode_name = Name(
-        first_name="アリス", 
-        last_name="田中", 
-        middle_name="まりこ"
-    )
-    assert unicode_name.first_name == "アリス"
-    assert unicode_name.last_name == "田中"
+# Full Search Process Mock Tests
+@patch('your_module.AccountProcess.phone_search')
+@patch('your_module.AccountProcess.name_zip_search')
+@patch('your_module.AccountProcess.email_search')
+@patch('your_module.AccountProcess.address_search')
+@patch('your_module.AccountProcess.billing_search')
+@patch('your_module.AccountProcess.confirmed_matches')
+@patch('your_module.AccountProcess.oracle_des_process')
+def test_full_search_process(
+    mock_oracle_des_process,
+    mock_confirmed_matches,
+    mock_billing_search,
+    mock_address_search,
+    mock_email_search,
+    mock_name_zip_search,
+    mock_phone_search
+):
+    account_process = AccountProcess()
 
-# Validation Tests for Different Data Sources
-def test_data_source_conversions():
-    # Convert between different record types
-    oracle_record = OracleDESRecord(
-        ACCT_NUM="12345",
-        ACCT_NAME="Doe,John",
-        PRIMARY_NUMBER="5551234567"
+    # Setup mock returns
+    mock_phone_search.return_value = None
+    mock_name_zip_search.return_value = None
+    mock_email_search.return_value = None
+    mock_address_search.return_value = None
+    mock_billing_search.return_value = None
+    mock_confirmed_matches.return_value = []
+    mock_oracle_des_process.return_value = None
+
+    # Create a full identifier
+    full_id = create_test_full_identifier()
+
+    # Run full search
+    result = account_process.full_search(full_id)
+
+    # Verify method calls
+    mock_phone_search.assert_called_once()
+    mock_name_zip_search.assert_called_once()
+    mock_email_search.assert_called_once()
+    mock_address_search.assert_called_once()
+    mock_billing_search.assert_called_once()
+    mock_oracle_des_process.assert_called_once()
+
+# Error Handling Tests
+def test_full_search_error_handling():
+    account_process = AccountProcess()
+
+    # Create an invalid full identifier
+    invalid_id = FullIdentifier(
+        name=Name(first_name="", last_name=""),
+        phone_number=PhoneNumber(),
+        address=Address(city="", state="", line1="", postal_code=""),
+        email=""
     )
+
+    # Capture logging output
+    with pytest.raises(Exception):
+        with patch('logging.info') as mock_logger:
+            account_process.full_search(invalid_id)
+            # Verify logging calls
+            assert mock_logger.call_count > 0
+
+# Configuration and Constant Tests
+def test_account_process_configuration():
+    # Test core service URLs
+    assert AccountProcess.SPECTRUM_CORE_API == "https://spectrumcoreuat.charter.com/spectrum-core/services/account/ept"
+    assert AccountProcess.SPECTRUM_CORE_ACCOUNT.startswith(AccountProcess.SPECTRUM_CORE_API)
+    assert AccountProcess.SPECTRUM_CORE_BILLING.startswith(AccountProcess.SPECTRUM_CORE_API)
     
-    general_request = GeneralRequest(
-        account_number=oracle_record.account_number,
-        first_name=oracle_record.first_name,
-        last_name=oracle_record.last_name,
-        phone_number=oracle_record.phone_number
-    )
-    
-    assert general_request.account_number == "12345"
-    assert general_request.first_name == "John"
-    assert general_request.phone_number == "5551234567"
+    # Test system ID
+    assert AccountProcess.SPECTRUM_CORE_SYSTEM_ID == "ComplianceService"
 
-# Performance Comparison Test
-def test_struct_performance(benchmark):
-    # Benchmark struct creation
-    def create_full_identifier():
-        return FullIdentifier(
-            name=Name(first_name="John", last_name="Doe"),
-            phone_number=PhoneNumber(line_number="5551234"),
-            address=Address(
-                city="Anytown", 
-                state="NY", 
-                line1="100 Main St", 
-                postal_code="12345"
-            ),
-            email="john.doe@example.com"
-        )
+# Extensive Parametrized Tests
+@pytest.mark.parametrize("test_input", [
+    # Standard full name
+    create_test_full_identifier(first_name="John", last_name="Doe"),
     
-    result = benchmark(create_full_identifier)
+    # Unicode names
+    create_test_full_identifier(first_name="José", last_name="García"),
+    
+    # Very long names
+    create_test_full_identifier(first_name="A" * 50, last_name="B" * 50),
+    
+    # Minimal information
+    FullIdentifier(
+        name=Name(first_name="Mini", last_name="User"),
+        phone_number=PhoneNumber(),
+        address=Address(city="", state="", line1="", postal_code=""),
+        email=""
+    ),
+    
+    # International address
+    create_test_full_identifier(
+        street_line1="789 International St", 
+        city="Toronto", 
+        state="ON", 
+        postal_code="M5V 2T6"
+    )
+])
+def test_comprehensive_full_identifier_processing(test_input):
+    account_process = AccountProcess()
+    
+    try:
+        # Run full search
+        results = account_process.full_search(test_input)
+        
+        # Basic validation
+        assert isinstance(results, list)
+        
+        # Optional: More specific checks based on type of input
+        if results:
+            for result in results:
+                assert isinstance(result, IdentifiedAccount)
+    
+    except Exception as e:
+        # Unexpected errors should fail the test
+        pytest.fail(f"Unexpected error in processing: {e}")
+
+# Performance and Stress Tests
+def test_performance_full_search(benchmark):
+    account_process = AccountProcess()
+    full_id = create_test_full_identifier()
+    
+    def run_full_search():
+        return account_process.full_search(full_id)
+    
+    # Benchmark the full search process
+    result = benchmark(run_full_search)
+    
     assert result is not None
+    assert isinstance(result, list)

@@ -1,24 +1,11 @@
-import Vue from 'vue'
-import { Line } from 'vue-chartjs'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js'
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-)
-
-Vue.component('Line', Line)
+Uncaught TypeError: chart_js__WEBPACK_IMPORTED_MODULE_1__.Chart.register is not a function
+    at eval (chart.js:15:1)
+    at ./plugins/chart.js (app.js:2954:1)
+    at __webpack_require__ (runtime.js:854:30)
+    at fn (runtime.js:151:20)
+    at eval (index.js:55:85)
+    at ./.nuxt/index.js (app.js:203:1)
+    at __webpack_require__ (runtime.js:854:30)
+    at fn (runtime.js:151:20)
+    at Module.eval (client.js:45:68)
+    at eval (client.js:1054:30)

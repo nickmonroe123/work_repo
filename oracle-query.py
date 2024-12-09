@@ -1,31 +1,10 @@
 import os
 import requests
-from redis import ConnectionPool
-from requests_ratelimiter import LimiterAdapter, RedisBucket
 from urllib.parse import urljoin
 
-# Jira
-# JIRA_USER = os.getenv('JIRA_USER', 'svc-pcs-infogov')
-jira_user = "p3270115"
-jira_access_token = ""
-JIRA_PASSWORD = os.getenv('JIRA_PASSWORD')
-JIRA_URL = os.getenv('JIRA_URL', 'https://jira-uat.corp.chartercom.com')
-JIRA_PROJECT_CODE = '103100'
-# REDIS
-REDIS_URL = "redis://{host}:{port}/1".format(
-    host=os.getenv('REDIS_HOST', 'localhost'), port=os.getenv('REDIS_PORT', '6379')
-)
-
-
 class BaseURLSession(requests.Session):
-    """Sub class of requests.Session to allow a base url to be used when
-    creating sessions.
-
-    Useful when changing environments. Also allows auth
-        to be set up in one place and add behavior to every request (e.g always raise for status)
-    source: https://github.com/psf/requests/issues/2554#issuecomment-109341010
-    """
-
+    """Session class with base URL support."""
+    
     def __init__(self, base_url):
         self.base_url = base_url
         super().__init__()
@@ -40,61 +19,31 @@ class BaseURLSession(requests.Session):
             raise e
         return resp
 
-
 class JiraSession(BaseURLSession):
-    """Session to connect to the Jira API."""
+    """Jira session with personal access token authentication."""
 
-    def __init__(self, base_url=None, token=None):
-        self.base_url = JIRA_URL if base_url is None else base_url
-        super().__init__(base_url=self.base_url)
-
-        # Set up authentication with Personal Access Token
+    def __init__(self, base_url, access_token):
+        super().__init__(base_url=base_url)
+        
+        # Set up authentication headers
         self.headers.update({
-            'Authorization': f'Bearer {jira_access_token}',
-            'Content-Type': 'application/json'
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
         })
-        # limit_adapter = LimiterAdapter(
-        #     per_second=1,
-        #     burst=1,
-        #     bucket_class=RedisBucket,
-        #     bucket_kwargs={
-        #         "redis_pool": ConnectionPool.from_url(REDIS_URL),
-        #         "bucket_name": "jira-rate-limit",
-        #     },
-        # )
-        # self.mount('http://', limit_adapter)
-        # self.mount('https://', limit_adapter)
-
-
 
 class JiraClient:
-    """Class to abstract common API calls to Jira."""
+    """Jira API client with common operations."""
 
-    def __init__(self, base_url: str = None, token: str = None) -> None:
-        self.session = JiraSession(base_url, token)
+    def __init__(self, base_url: str, access_token: str) -> None:
+        self.session = JiraSession(base_url, access_token)
 
     def get_issue(self, issue_id: str):
-        """Gets the API response for a specific issue.
-
-        Args:
-            issue_id (str): The id for the issue
-
-        Returns:
-            dict: The API response for the issue
-        """
+        """Gets a specific issue by ID."""
         return self.session.get(f'/rest/api/2/issue/{issue_id}').json()
 
     def search_issues(self, jql: str, max_results: int = 50, start_at: int = 0):
-        """Search for issues using Jira Query Language (JQL).
-
-        Args:
-            jql (str): The Jira Query Language string to search issues
-            max_results (int, optional): Maximum number of results to return. Defaults to 50.
-            start_at (int, optional): Start index for pagination. Defaults to 0.
-
-        Returns:
-            dict: Search results including issues and metadata
-        """
+        """Search for issues using JQL."""
         params = {
             'jql': jql,
             'maxResults': max_results,
@@ -102,17 +51,45 @@ class JiraClient:
         }
         return self.session.get('/rest/api/2/search', params=params).json()
 
+    def verify_connection(self):
+        """Verify the connection and authentication by fetching the current user."""
+        return self.session.get('/rest/api/2/myself').json()
 
-# Example usage
-jira_client = JiraClient()
+def main():
+    # Configuration
+    JIRA_URL = 'https://jira-uat.corp.chartercom.com'
+    JIRA_ACCESS_TOKEN = 'your_access_token_here'  # Replace with your actual token
+    
+    # Initialize client
+    jira_client = JiraClient(
+        base_url=JIRA_URL,
+        access_token=JIRA_ACCESS_TOKEN
+    )
+    
+    try:
+        # Verify connection
+        user_info = jira_client.verify_connection()
+        print(f"Successfully connected as: {user_info.get('displayName', user_info.get('name'))}")
+        
+        # Get specific issue
+        issue = jira_client.get_issue("2391")
+        print("\nIssue details:")
+        print(f"Summary: {issue.get('fields', {}).get('summary')}")
+        
+        # Search for recent issues
+        search_results = jira_client.search_issues(
+            'project = DPCP AND updated >= -12h'
+        )
+        print(f"\nFound {search_results.get('total', 0)} matching issues")
+        
+    except requests.exceptions.HTTPError as e:
+        print(f"Error occurred: {e}")
+        if '401' in str(e):
+            print("Authentication failed. Please check your access token.")
+        elif '403' in str(e):
+            print("Permission denied. Please check your access permissions.")
+        else:
+            print("An unexpected error occurred.")
 
-# Search for open issues in a specific project
-# search_results = jira_client.search_issues(
-#     'project = DPCP AND updated >= -12h'
-# )
-search_results = jira_client.get_issue("2391")
-print(search_results)
-
-
-
-
+if __name__ == "__main__":
+    main()

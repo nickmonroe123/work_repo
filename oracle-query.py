@@ -1,20 +1,24 @@
-client.js:490 
- [Vue warn]: Failed to mount component: template or render function not defined.
+import Vue from 'vue'
+import { Line } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js'
 
-found in
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+)
 
----> <Anonymous>
-       <Nuxt>
-         <ZoomCenterTransition>
-           <Layouts/default.vue> at layouts/default.vue
-             <Root>
-Promise.then		
-_callee6$	@	client.js:490
-Promise.then		
-_render	@	client.js:512
-render	@	client.js:266
-_callee4$	@	client.js:189
-Promise.then		
-_loadAsyncComponents	@	client.js:206
-loadAsyncComponents	@	client.js:152
-push	@	router.js:71
+Vue.component('Line', Line)

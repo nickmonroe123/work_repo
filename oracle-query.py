@@ -1,11 +1,29 @@
-Uncaught TypeError: chart_js__WEBPACK_IMPORTED_MODULE_1__.Chart.register is not a function
-    at eval (chart.js:15:1)
-    at ./plugins/chart.js (app.js:2954:1)
-    at __webpack_require__ (runtime.js:854:30)
-    at fn (runtime.js:151:20)
-    at eval (index.js:55:85)
-    at ./.nuxt/index.js (app.js:203:1)
-    at __webpack_require__ (runtime.js:854:30)
-    at fn (runtime.js:151:20)
-    at Module.eval (client.js:45:68)
-    at eval (client.js:1054:30)
+import Vue from 'vue'
+import { Line } from 'vue-chartjs'
+
+// Create a reusable line chart component
+Vue.component('LineChart', {
+  extends: Line,
+  props: {
+    chartdata: {
+      type: Object,
+      default: null
+    },
+    options: {
+      type: Object,
+      default: null
+    }
+  },
+  mounted() {
+    this.renderChart(this.chartdata, this.options)
+  },
+  watch: {
+    chartdata: {
+      handler(newData) {
+        this.$data._chart.destroy()
+        this.renderChart(newData, this.options)
+      },
+      deep: true
+    }
+  }
+})

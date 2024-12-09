@@ -1,102 +1,118 @@
-# Extensive Parametrized Tests
-@pytest.mark.parametrize("test_input", [
-    # Standard full name
-    create_test_full_identifier(first_name="John", last_name="Doe"),
+import os
+import requests
+from redis import ConnectionPool
+from requests_ratelimiter import LimiterAdapter, RedisBucket
+from urllib.parse import urljoin
 
-    # Unicode names
-    create_test_full_identifier(first_name="José", last_name="García"),
-
-    # Very long names
-    create_test_full_identifier(first_name="A" * 50, last_name="B" * 50),
-
-    # Minimal information - just name
-    FullIdentifier(
-        name=Name(first_name="Mini", last_name="User"),
-        phone_number=PhoneNumber(),
-        address=Address(city="", state="", line1="", postal_code=""),
-        email=""
-    ),
-
-    # Minimal information - just phone number
-    FullIdentifier(
-        name=Name(first_name="", last_name=""),
-        phone_number=PhoneNumber(area_code="555", exchange="666", line_number="7777"),
-        address=Address(city="", state="", line1="", postal_code=""),
-        email=""
-    ),
-
-    # Minimal information - just bad phone number
-    FullIdentifier(
-        name=Name(first_name="", last_name=""),
-        phone_number=PhoneNumber(area_code="2555", exchange="6266", line_number="77727"),
-        address=Address(city="", state="", line1="", postal_code=""),
-        email=""
-    ),
+# Jira
+# JIRA_USER = os.getenv('JIRA_USER', 'svc-pcs-infogov')
+jira_user = "p3270115"
+jira_access_token = ""
+JIRA_PASSWORD = os.getenv('JIRA_PASSWORD')
+JIRA_URL = os.getenv('JIRA_URL', 'https://jira-uat.corp.chartercom.com')
+JIRA_PROJECT_CODE = '103100'
+# REDIS
+REDIS_URL = "redis://{host}:{port}/1".format(
+    host=os.getenv('REDIS_HOST', 'localhost'), port=os.getenv('REDIS_PORT', '6379')
+)
 
 
-    # Minimal information - just address
-    FullIdentifier(
-        name=Name(first_name="", last_name=""),
-        phone_number=PhoneNumber(),
-        address=Address(city="Alton", state="IL", line1="213 street", postal_code="62002"),
-        email=""
-    ),
+class BaseURLSession(requests.Session):
+    """Sub class of requests.Session to allow a base url to be used when
+    creating sessions.
 
-    # Minimal information - just email
-    FullIdentifier(
-        name=Name(first_name="", last_name=""),
-        phone_number=PhoneNumber(),
-        address=Address(city="", state="", line1="", postal_code=""),
-        email="testemail@outlook.com"
-    ),
+    Useful when changing environments. Also allows auth
+        to be set up in one place and add behavior to every request (e.g always raise for status)
+    source: https://github.com/psf/requests/issues/2554#issuecomment-109341010
+    """
 
-    # Minimal information - full name, bad state
-    FullIdentifier(
-        name=Name(first_name="Luke", last_name="Test"),
-        phone_number=PhoneNumber(),
-        address=Address(city="", state="ASD", line1="", postal_code=""),
-        email="testemail@outlook.com"
-    ),
+    def __init__(self, base_url):
+        self.base_url = base_url
+        super().__init__()
 
-    # Minimal information - full name, bad zip
-    FullIdentifier(
-        name=Name(first_name="Luke", last_name="Test"),
-        phone_number=PhoneNumber(),
-        address=Address(city="", state="", line1="", postal_code="123"),
-        email="testemail@outlook.com"
-    ),
+    def request(self, method, url, *args, **kwargs):
+        url = urljoin(self.base_url, url)
+        try:
+            resp = super().request(method, url, *args, **kwargs)
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            e.args += (resp.text,)
+            raise e
+        return resp
 
-    # Full data, bad input
-    FullIdentifier(
-        name=Name(first_name="Luke", last_name="Test"),
-        phone_number=PhoneNumber(area_code="2555", exchange="6266", line_number="77727"),
-        address=Address(city="", state="ALS", line1="", postal_code="123"),
-        email=""
-    ),
 
-    # International address
-    create_test_full_identifier(
-        street_line1="789 International St",
-        city="Toronto",
-        state="ON",
-        postal_code="M5V 2T6"
-    )
-])
-def test_comprehensive_full_identifier_processing(test_input):
-    account_process = AccountProcess()
+class JiraSession(BaseURLSession):
+    """Session to connect to the Jira API."""
 
-    try:
-        # Run full search
-        results = account_process.full_search(test_input)
+    def __init__(self, base_url=None, token=None):
+        self.base_url = JIRA_URL if base_url is None else base_url
+        super().__init__(base_url=self.base_url)
 
-        # Basic validation
-        assert isinstance(results, list)
+        # Set up authentication with Personal Access Token
+        self.headers.update({
+            'Authorization': f'Bearer {jira_access_token}',
+            'Content-Type': 'application/json'
+        })
+        # limit_adapter = LimiterAdapter(
+        #     per_second=1,
+        #     burst=1,
+        #     bucket_class=RedisBucket,
+        #     bucket_kwargs={
+        #         "redis_pool": ConnectionPool.from_url(REDIS_URL),
+        #         "bucket_name": "jira-rate-limit",
+        #     },
+        # )
+        # self.mount('http://', limit_adapter)
+        # self.mount('https://', limit_adapter)
 
-        # Optional: More specific checks based on type of input
-        if results:
-            for result in results:
-                assert isinstance(result, IdentifiedAccount)
 
-    except Exception as e:
-        # Unexpected errors should fail the test
-        pytest.fail(f"Unexpected error in processing: {e}")
+
+class JiraClient:
+    """Class to abstract common API calls to Jira."""
+
+    def __init__(self, base_url: str = None, token: str = None) -> None:
+        self.session = JiraSession(base_url, token)
+
+    def get_issue(self, issue_id: str):
+        """Gets the API response for a specific issue.
+
+        Args:
+            issue_id (str): The id for the issue
+
+        Returns:
+            dict: The API response for the issue
+        """
+        return self.session.get(f'/rest/api/2/issue/{issue_id}').json()
+
+    def search_issues(self, jql: str, max_results: int = 50, start_at: int = 0):
+        """Search for issues using Jira Query Language (JQL).
+
+        Args:
+            jql (str): The Jira Query Language string to search issues
+            max_results (int, optional): Maximum number of results to return. Defaults to 50.
+            start_at (int, optional): Start index for pagination. Defaults to 0.
+
+        Returns:
+            dict: Search results including issues and metadata
+        """
+        params = {
+            'jql': jql,
+            'maxResults': max_results,
+            'startAt': start_at
+        }
+        return self.session.get('/rest/api/2/search', params=params).json()
+
+
+# Example usage
+jira_client = JiraClient()
+
+# Search for open issues in a specific project
+# search_results = jira_client.search_issues(
+#     'project = DPCP AND updated >= -12h'
+# )
+search_results = jira_client.get_issue("2391")
+print(search_results)
+
+
+
+

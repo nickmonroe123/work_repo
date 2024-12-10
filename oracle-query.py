@@ -1,1 +1,44 @@
-{'expand': 'schema,names', 'startAt': 0, 'maxResults': 50, 'total': 7, 'issues': [{'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12685946', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12685946', 'key': 'DPCP-2556', 'fields': {'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12685945', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12685945', 'key': 'DPCP-2555', 'fields': {'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12685944', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12685944', 'key': 'DPCP-2554', 'fields': {'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12685943', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12685943', 'key': 'DPCP-2553', 'fields': {'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12686248', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12686248', 'key': 'DPCP-2552', 'fields': {'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12686247', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12686247', 'key': 'DPCP-2551', 'fields': {'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12686246', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12686246', 'key': 'DPCP-2550', 'fields': {'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}]}
+def extract_values(data):
+    try:
+        # Check if data exists and has 'issues' key
+        if not data or not isinstance(data, dict):
+            return {'error': 'Invalid data format', 'data': []}
+            
+        issues = data.get('issues', [])
+        if not issues:
+            return {'error': 'No issues found', 'data': []}
+
+        result = []
+        for index, issue in enumerate(issues):
+            try:
+                # Use get() method with default values to handle missing keys
+                issue_data = {
+                    'id': issue.get('id', 'N/A'),
+                    'status_name': (
+                        issue.get('fields', {})
+                        .get('status', {})
+                        .get('name', 'N/A')
+                    )
+                }
+                result.append(issue_data)
+            except Exception as e:
+                # Handle errors for individual records without failing the entire process
+                print(f"Warning: Error processing issue at index {index}: {str(e)}")
+                result.append({
+                    'id': 'ERROR',
+                    'status_name': 'ERROR',
+                    'error': str(e)
+                })
+
+        return {'error': None, 'data': result}
+
+    except Exception as e:
+        return {'error': f"Fatal error: {str(e)}", 'data': []}
+
+# Example usage:
+# response = extract_values(data)
+# if response['error']:
+#     print(f"Error occurred: {response['error']}")
+# else:
+#     for item in response['data']:
+#         print(item)

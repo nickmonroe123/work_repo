@@ -1,84 +1,24 @@
-class AddressTests(TestCase):
+@patch('core.models.Request.handle_new_request', Mock())
+class TestRequestEligibility(TestCase):
 
-    def test_street_parsing_scenarios(self):
-        """Test various street address parsing scenarios"""
-        test_cases = [
-            # Standard format
-            {
-                "input": "123 Main Street",
-                "expected_number": "123",
-                "expected_name": "Main Street"
-            },
-            # No street number
-            {
-                "input": "Main Street",
-                "expected_number": "",
-                "expected_name": "Main Street"
-            },
-            # Complex street number
-            {
-                "input": "123-A Main Street",
-                "expected_number": "123-A",
-                "expected_name": "Main Street"
-            },
-            # Extra spaces
-            {
-                "input": "  123   Main   Street  ",
-                "expected_number": "123",
-                "expected_name": "Main   Street"
-            },
-            # Empty string
-            {
-                "input": "",
-                "expected_number": "",
-                "expected_name": ""
-            },
-            # Just spaces
-            {
-                "input": "   ",
-                "expected_number": "",
-                "expected_name": ""
-            },
-            # Complex address with unit
-            {
-                "input": "123B Main Street Unit 4",
-                "expected_number": "123B",
-                "expected_name": "Main Street Unit 4"
-            },
-            # Street number with hyphens and letters
-            {
-                "input": "123-45B Main Street",
-                "expected_number": "123-45B",
-                "expected_name": "Main Street"
-            }
-        ]
+    # fmt: off
+    @parameterized.expand([
+        ('fully_eligible', date(year=2021, month=1, day=1), date(year=2020, month=1, day=1), True),
+        ('ineligible_by_date', date(year=2019, month=1, day=1), date(year=2020, month=1, day=1), False),
+        ('ineligible_by_no_regulation', date(year=2021, month=1, day=1), None, False),
+    ])
 
-        for case in test_cases:
-            address = Address(
-                city="Test City",
-                state="TS",
-                line1=case["input"],
-                postal_code="12345"
-            )
-            self.assertEqual(address.street_number, case["expected_number"])
-            self.assertEqual(address.street_name, case["expected_name"])
-
-    def test_postal_code_parsing(self):
-        """Test various postal code formats"""
-        test_cases = [
-            ("12345", "12345"),
-            ("12345-6789", "12345"),
-            ("12345-", "12345"),
-            ("-12345", ""),
-            ("", ""),
-            ("12345-6789-0000", "12345")
-        ]
-
-        for postal_code, expected in test_cases:
-            address = Address(
-                city="Test City",
-                state="TS",
-                line1="123 Test St",
-                postal_code=postal_code
-            )
-            self.assertEqual(address.simplified_postal_code, expected)
+    # fmt: on
+    def test_eligible_by_state(
+        self, test_name, request_date, regulation_effective_date, expected
+    ):
+        request_fields = dict(
+            request_datetime=request_date,
+        )
+        if regulation_effective_date:
+            request_fields['regulation_cd__effective_date'] = regulation_effective_date
+        req = baker.make(
+            Request,
+            **request_fields,
+        )
+        self.assertEqual(req.eligible_by_state(), expected)

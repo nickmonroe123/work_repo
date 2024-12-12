@@ -1,24 +1,83 @@
-@patch('core.models.Request.handle_new_request', Mock())
-class TestRequestEligibility(TestCase):
+from parameterized import parameterized
+from unittest import TestCase
+
+class AddressTests(TestCase):
 
     # fmt: off
     @parameterized.expand([
-        ('fully_eligible', date(year=2021, month=1, day=1), date(year=2020, month=1, day=1), True),
-        ('ineligible_by_date', date(year=2019, month=1, day=1), date(year=2020, month=1, day=1), False),
-        ('ineligible_by_no_regulation', date(year=2021, month=1, day=1), None, False),
+        # name, input, expected_number, expected_name
+        ('standard_format', 
+         "123 Main Street", 
+         "123", 
+         "Main Street"),
+        
+        ('no_street_number',
+         "Main Street",
+         "",
+         "Main Street"),
+         
+        ('complex_street_number',
+         "123-A Main Street",
+         "123-A",
+         "Main Street"),
+         
+        ('extra_spaces',
+         "  123   Main   Street  ",
+         "123",
+         "Main   Street"),
+         
+        ('empty_string',
+         "",
+         "",
+         ""),
+         
+        ('just_spaces',
+         "   ",
+         "",
+         ""),
+         
+        ('complex_address_with_unit',
+         "123B Main Street Unit 4",
+         "123B",
+         "Main Street Unit 4"),
+         
+        ('street_number_with_hyphens',
+         "123-45B Main Street",
+         "123-45B",
+         "Main Street"),
     ])
-
     # fmt: on
-    def test_eligible_by_state(
-        self, test_name, request_date, regulation_effective_date, expected
+    def test_street_parsing_scenarios(
+        self, name, input_address, expected_number, expected_name
     ):
-        request_fields = dict(
-            request_datetime=request_date,
+        """Test various street address parsing scenarios"""
+        address = Address(
+            city="Test City",
+            state="TS",
+            line1=input_address,
+            postal_code="12345"
         )
-        if regulation_effective_date:
-            request_fields['regulation_cd__effective_date'] = regulation_effective_date
-        req = baker.make(
-            Request,
-            **request_fields,
+        self.assertEqual(address.street_number, expected_number)
+        self.assertEqual(address.street_name, expected_name)
+
+    # fmt: off
+    @parameterized.expand([
+        ('standard_zip', "12345", "12345"),
+        ('zip_plus_four', "12345-6789", "12345"),
+        ('zip_with_hyphen', "12345-", "12345"),
+        ('invalid_hyphen_prefix', "-12345", ""),
+        ('empty_postal', "", ""),
+        ('extended_zip', "12345-6789-0000", "12345"),
+    ])
+    # fmt: on
+    def test_postal_code_parsing(
+        self, name, postal_code, expected
+    ):
+        """Test various postal code formats"""
+        address = Address(
+            city="Test City",
+            state="TS",
+            line1="123 Test St",
+            postal_code=postal_code
         )
-        self.assertEqual(req.eligible_by_state(), expected)
+        self.assertEqual(address.simplified_postal_code, expected)

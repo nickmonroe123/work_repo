@@ -1,180 +1,228 @@
-from typing import TypeVar
-
-import msgspec
+from django.test import TestCase
 from identifiers.structs import Address, FullIdentifier, Name, PhoneNumber
 
+class IdentifierTestCase(TestCase):
+    def setUp(self):
+        """Set up test data that will be used across multiple tests"""
+        self.internal_record_data = {
+            "primaryPhone": "1234567890",
+            "firstName": "John",
+            "lastName": "Doe",
+            "zipCode5": "12345",
+            "emailAddress": "john.doe@example.com",
+            "streetNumber": "123",
+            "streetName": "Main St",
+            "city": "Springfield",
+            "state": "IL",
+            "line2": "Apt 4B",
+            "uCAN": "ABC123",
+            "divisionID": "DIV001",
+            "accountStatus": "Active",
+            "secondaryPhone": "9876543210",
+            "accountNumber": "ACC001",
+            "sourceMSO": "Source1",
+            "addressLine1": "123 Main St",
+            "addressLine2": "Apt 4B",
+            "accountType": {"description": "Residential"}
+        }
 
-class IdentifiedAccount(FullIdentifier):
-    match_score: float = 0.0
-    account_type: str = ""
-    status: str = ""
-    source: str = ""
-    ucan: str = ""
-    billing_account_number: str = ""
-    spectrum_core_account: str = ""
-    spectrum_core_division: str = ""
+        self.oracle_record_data = {
+            "ACCT_NUM": "ACC001",
+            "PRIMARY_NUMBER": "1234567890",
+            "secondaryPhone": "9876543210",
+            "ACCT_NAME": "Doe, John",
+            "PSTL_CD_TXT_BLR": "12345",
+            "EMAIL_ADDR": "john.doe@example.com",
+            "CITY_NM_BLR": "Springfield",
+            "STATE_NM_BLR": "IL",
+            "UCAN": "ABC123",
+            "SPC_DIV_ID": "DIV001",
+            "ACCOUNTSTATUS": "Active",
+            "ACCT_TYPE_CD": "Residential",
+            "SRC_SYS_CD": "Source1",
+            "BLR_ADDR1_LINE": "123 Main St",
+            "BLR_ADDR2_LINE": "Apt 4B"
+        }
 
-
-InternalRequestLike = TypeVar(
-    'InternalRequestLike', bound='OracleDESRecord | InternalRecord'
-)
-
-
-class ToIdentifiedAccountMixin:
-    """Provide a function to convert to an identified account."""
-
-    def to_identified_account(self: InternalRequestLike) -> IdentifiedAccount:
-        return IdentifiedAccount(
-            name=Name(
-                first_name=self.first_name,
-                last_name=self.last_name,
-            ),
+        self.full_identifier = FullIdentifier(
+            name=Name(first_name="John", last_name="Doe"),
             phone_number=PhoneNumber(
-                area_code=self.phone_number[:3] if self.phone_number else '',
-                exchange=self.phone_number[3:6] if len(self.phone_number) >= 6 else '',
-                line_number=self.phone_number[6:] if len(self.phone_number) > 6 else '',
-                extension='',
-                type_code='',
+                area_code="123",
+                exchange="456",
+                line_number="7890",
+                extension="",
+                type_code=""
             ),
             address=Address(
-                city=self.city,
-                state=self.state,
-                line1=self._address_line_1,
-                line2=self._address_line_2,
-                postal_code=self.zipcode5,
+                city="Springfield",
+                state="IL",
+                line1="123 Main St",
+                line2="Apt 4B",
+                postal_code="12345"
             ),
-            email=self.email_address,
-            account_type=self._account_type.description,
-            status=self.account_status,
-            source=self.source,
-            ucan=self.ucan,
-            spectrum_core_account=self.account_number,
-            spectrum_core_division=self.division_id,
+            email="john.doe@example.com"
         )
 
+class InternalRecordTests(IdentifierTestCase):
+    def test_internal_record_creation(self):
+        """Test creation of InternalRecord with all fields"""
+        record = InternalRecord(**self.internal_record_data)
+        
+        self.assertEqual(record.phone_number, "1234567890")
+        self.assertEqual(record.first_name, "John")
+        self.assertEqual(record.last_name, "Doe")
+        self.assertEqual(record.zipcode5, "12345")
+        self.assertEqual(record.email_address, "john.doe@example.com")
+        self.assertEqual(record.street_number, "123")
+        self.assertEqual(record.street_name, "123 Main St")
+        self.assertEqual(record.city, "Springfield")
+        self.assertEqual(record.state, "IL")
+        self.assertEqual(record.ucan, "ABC123")
+        self.assertEqual(record.division_id, "DIV001")
+        self.assertEqual(record.account_status, "Active")
+        self.assertEqual(record.account_number, "ACC001")
+        self.assertEqual(record.source, "Source1")
+        self.assertEqual(record._address_line_1, "123 Main St")
+        self.assertEqual(record._address_line_2, "Apt 4B")
+        self.assertEqual(record.account_description, "Residential")
 
-class GeneralRequest(msgspec.Struct):
-    country_code: str = msgspec.field(name="countryCode", default="")
-    phone_number: str = msgspec.field(name="primaryPhone", default="")
-    first_name: str = msgspec.field(name="firstName", default="")
-    last_name: str = msgspec.field(name="lastName", default="")
-    zipcode5: str = msgspec.field(name="zipCode5", default="")
-    email_address: str = msgspec.field(name="emailAddress", default="")
-    street_number: str = msgspec.field(name="streetNumber", default="")
-    street_name: str = msgspec.field(name="streetName", default="")
-    city: str = msgspec.field(name="city", default="")
-    state: str = msgspec.field(name="state", default="")
-    apartment: str = msgspec.field(name="line2", default="")
+    def test_internal_record_full_address(self):
+        """Test full address formatting with apartment"""
+        record = InternalRecord(**self.internal_record_data)
+        expected_full_address = "123 Main St Apt 4B Springfield IL"
+        expected_full_address_no_apt = "123 Main St Springfield IL"
+        
+        self.assertEqual(record.full_address, expected_full_address)
+        self.assertEqual(record.full_address_no_apt, expected_full_address_no_apt)
 
-    @classmethod
-    def from_full_identifier(cls, full_id: FullIdentifier):
-        return cls(
-            phone_number=full_id.phone_number.ten_digits_only,
-            first_name=full_id.name.first_name,
-            last_name=full_id.name.last_name,
-            zipcode5=full_id.address.simplified_postal_code,
-            email_address=full_id.email,
-            street_number=full_id.address.street_number,
-            street_name=full_id.address.street_name,
-            city=full_id.address.city,
-            state=full_id.address.state,
-            apartment=full_id.address.line2,
-        )
+    def test_internal_record_no_apt(self):
+        """Test full address formatting without apartment"""
+        data = self.internal_record_data.copy()
+        data["addressLine2"] = ""
+        record = InternalRecord(**data)
+        expected_full_address = "123 Main St Springfield IL"
+        
+        self.assertEqual(record.full_address, expected_full_address)
+        self.assertFalse(hasattr(record, "full_address_no_apt"))
 
+class OracleRecordTests(IdentifierTestCase):
+    def test_oracle_record_creation(self):
+        """Test creation of OracleDESRecord with all fields"""
+        record = OracleDESRecord(**self.oracle_record_data)
+        
+        self.assertEqual(record.account_number, "ACC001")
+        self.assertEqual(record.phone_number, "1234567890")
+        self.assertEqual(record.first_name, "John")
+        self.assertEqual(record.last_name, "Doe")
+        self.assertEqual(record.zipcode5, "12345")
+        self.assertEqual(record.email_address, "john.doe@example.com")
+        self.assertEqual(record.city, "Springfield")
+        self.assertEqual(record.state, "IL")
+        self.assertEqual(record.ucan, "ABC123")
+        self.assertEqual(record.division_id, "DIV001")
+        self.assertEqual(record.account_status, "Active")
+        self.assertEqual(record.source, "Source1")
 
-class Description(msgspec.Struct):
-    description: str = ""
+    def test_oracle_record_name_parsing(self):
+        """Test parsing of comma-separated names"""
+        record = OracleDESRecord(**self.oracle_record_data)
+        self.assertEqual(record.first_name, "John")
+        self.assertEqual(record.last_name, "Doe")
 
+    def test_oracle_record_invalid_name(self):
+        """Test handling of invalid name format"""
+        data = self.oracle_record_data.copy()
+        data["ACCT_NAME"] = "Invalid Name Format"
+        record = OracleDESRecord(**data)
+        self.assertEqual(record.first_name, "")
+        self.assertEqual(record.last_name, "")
 
-class InternalRecord(ToIdentifiedAccountMixin, GeneralRequest):
-    ucan: str = msgspec.field(name="uCAN", default="")
-    division_id: str = msgspec.field(name="divisionID", default="")
-    account_status: str = msgspec.field(name="accountStatus", default="")
-    secondary_number: str = msgspec.field(name="secondaryPhone", default="")
-    account_number: str = msgspec.field(name="accountNumber", default="")
-    account_description: str = ""
-    source: str = msgspec.field(name="sourceMSO", default="")
-    full_address: str = ""
-    full_address_no_apt: str = ""
-    _account_type: Description = msgspec.field(name="accountType", default=Description)
-    _address_line_1: str = msgspec.field(name="addressLine1", default="")
-    _address_line_2: str = msgspec.field(name="addressLine2", default="")
+class IdentifiedAccountConversionTests(IdentifierTestCase):
+    def test_to_identified_account_internal(self):
+        """Test conversion from InternalRecord to IdentifiedAccount"""
+        record = InternalRecord(**self.internal_record_data)
+        identified = record.to_identified_account()
+        
+        self.assertIsInstance(identified, IdentifiedAccount)
+        self.assertEqual(identified.name.first_name, "John")
+        self.assertEqual(identified.name.last_name, "Doe")
+        self.assertEqual(identified.phone_number.area_code, "123")
+        self.assertEqual(identified.phone_number.exchange, "456")
+        self.assertEqual(identified.phone_number.line_number, "7890")
+        self.assertEqual(identified.address.city, "Springfield")
+        self.assertEqual(identified.address.state, "IL")
+        self.assertEqual(identified.address.line1, "123 Main St")
+        self.assertEqual(identified.address.line2, "Apt 4B")
+        self.assertEqual(identified.address.postal_code, "12345")
+        self.assertEqual(identified.email, "john.doe@example.com")
+        self.assertEqual(identified.account_type, "Residential")
+        self.assertEqual(identified.status, "Active")
+        self.assertEqual(identified.source, "Source1")
+        self.assertEqual(identified.ucan, "ABC123")
+        self.assertEqual(identified.spectrum_core_account, "ACC001")
+        self.assertEqual(identified.spectrum_core_division, "DIV001")
 
-    def __post_init__(self):
-        try:
-            self.street_number, self.street_name = (
-                self._address_line_1.split(' ')[0],
-                self._address_line_1,
-            )
-        except:
-            self.street_number, self.street_name = "", ""
-        self.account_description = self._account_type.description
-        if self._address_line_2 == "":
-            self.full_address = self.street_name + " " + self.city + " " + self.state
-        else:
-            self.full_address = (
-                self.street_name
-                + " "
-                + self._address_line_2
-                + " "
-                + self.city
-                + " "
-                + self.state
-            )
-            self.full_address_no_apt = (
-                self.street_name + " " + self.city + " " + self.state
-            )
+    def test_to_identified_account_oracle(self):
+        """Test conversion from OracleDESRecord to IdentifiedAccount"""
+        record = OracleDESRecord(**self.oracle_record_data)
+        identified = record.to_identified_account()
+        
+        self.assertIsInstance(identified, IdentifiedAccount)
+        self.assertEqual(identified.name.first_name, "John")
+        self.assertEqual(identified.name.last_name, "Doe")
+        self.assertEqual(identified.phone_number.area_code, "123")
+        self.assertEqual(identified.phone_number.exchange, "456")
+        self.assertEqual(identified.phone_number.line_number, "7890")
+        self.assertEqual(identified.address.city, "Springfield")
+        self.assertEqual(identified.address.state, "IL")
+        self.assertEqual(identified.address.postal_code, "12345")
 
+class GeneralRequestTests(IdentifierTestCase):
+    def test_general_request_from_full_identifier(self):
+        """Test creation of GeneralRequest from FullIdentifier"""
+        request = GeneralRequest.from_full_identifier(self.full_identifier)
+        
+        self.assertEqual(request.phone_number, "1234567890")
+        self.assertEqual(request.first_name, "John")
+        self.assertEqual(request.last_name, "Doe")
+        self.assertEqual(request.zipcode5, "12345")
+        self.assertEqual(request.email_address, "john.doe@example.com")
+        self.assertEqual(request.city, "Springfield")
+        self.assertEqual(request.state, "IL")
+        self.assertEqual(request.apartment, "Apt 4B")
 
-class OracleDESRecord(ToIdentifiedAccountMixin, msgspec.Struct):
-    account_number: str = msgspec.field(name="ACCT_NUM", default="")
-    phone_number: str = msgspec.field(name="PRIMARY_NUMBER", default="")
-    secondary_number: str = msgspec.field(name="secondaryPhone", default="")
-    first_name: str = msgspec.field(name="ACCT_NAME", default="")
-    last_name: str = ""
-    zipcode5: str = msgspec.field(name="PSTL_CD_TXT_BLR", default="")
-    email_address: str = msgspec.field(name="EMAIL_ADDR", default="")
-    street_number: str = ""
-    street_name: str = ""
-    city: str = msgspec.field(name="CITY_NM_BLR", default="")
-    state: str = msgspec.field(name="STATE_NM_BLR", default="")
-    ucan: str = msgspec.field(name="UCAN", default="")
-    division_id: str = msgspec.field(name="SPC_DIV_ID", default="")
-    account_status: str = msgspec.field(name="ACCOUNTSTATUS", default="")
-    account_description: str = msgspec.field(name="ACCT_TYPE_CD", default="")
-    source: str = msgspec.field(name="SRC_SYS_CD", default="")
-    full_address: str = ""
-    full_address_no_apt: str = ""
-    _address_line_1: str = msgspec.field(name="BLR_ADDR1_LINE", default="")
-    _address_line_2: str = msgspec.field(name="BLR_ADDR2_LINE", default="")
+class EdgeCaseTests(IdentifierTestCase):
+    def test_empty_phone_number(self):
+        """Test handling of empty phone numbers"""
+        data = self.oracle_record_data.copy()
+        data["PRIMARY_NUMBER"] = ""
+        record = OracleDESRecord(**data)
+        identified = record.to_identified_account()
+        
+        self.assertEqual(identified.phone_number.area_code, "")
+        self.assertEqual(identified.phone_number.exchange, "")
+        self.assertEqual(identified.phone_number.line_number, "")
 
-    def __post_init__(self):
-        try:
-            self.street_number, self.street_name = (
-                self._address_line_1.split(' ')[0],
-                self._address_line_1,
-            )
-        except:
-            self.street_number, self.street_name = "", ""
-        try:
-            self.first_name, self.last_name = (
-                self.first_name.split(',')[1],
-                self.first_name.split(',')[0],
-            )
-        except:
-            self.first_name, self.last_name = "", ""
-        if self._address_line_2 == "":
-            self.full_address = self.street_name + " " + self.city + " " + self.state
-        else:
-            self.full_address = (
-                self.street_name
-                + " "
-                + self._address_line_2
-                + " "
-                + self.city
-                + " "
-                + self.state
-            )
-            self.full_address_no_apt = (
-                self.street_name + " " + self.city + " " + self.state
-            )
+    def test_partial_phone_number(self):
+        """Test handling of partial phone numbers"""
+        data = self.oracle_record_data.copy()
+        data["PRIMARY_NUMBER"] = "123"
+        record = OracleDESRecord(**data)
+        identified = record.to_identified_account()
+        
+        self.assertEqual(identified.phone_number.area_code, "123")
+        self.assertEqual(identified.phone_number.exchange, "")
+        self.assertEqual(identified.phone_number.line_number, "")
+
+    def test_empty_address(self):
+        """Test handling of empty addresses"""
+        data = self.oracle_record_data.copy()
+        data["BLR_ADDR1_LINE"] = ""
+        record = OracleDESRecord(**data)
+        
+        self.assertEqual(record.street_number, "")
+        self.assertEqual(record.street_name, "")
+
+if __name__ == '__main__':
+    from django.core.management import execute_from_command_line
+    execute_from_command_line(['manage.py', 'test'])

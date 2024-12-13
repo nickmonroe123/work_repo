@@ -1,202 +1,269 @@
 from django.test import TestCase
 from unittest.mock import patch, MagicMock
-import requests
-from account_identification.services import AccountProcess
+import oracledb
+from account_identification.services import (
+    AccountProcess,
+    search_with_phone,
+    search_with_address,
+    search_with_email,
+    search_with_zip_name
+)
 from account_identification import constants
+from identifiers.structs import GeneralRequest
 
-class TestBillingFunctions(TestCase):
+class TestOracleDESProcess(TestCase):
     def setUp(self):
         self.account_process = AccountProcess()
-        # Setup a mock request object
-        self.mock_request = MagicMock()
-        self.mock_request.first_name = "John"
-        self.mock_request.last_name = "Doe"
-        self.mock_request.phone_number = "5551234567"
-        self.mock_request.email_address = "john.doe@example.com"
-        self.mock_request.street_number = "123"
-        self.mock_request.street_name = "Main St"
-        self.mock_request.city = "Springfield"
-        self.mock_request.state = "IL"
-        self.mock_request.zipcode5 = "62701"
+        # Setup a complete valid request
+        self.valid_request = GeneralRequest(
+            phone_number="5551234567",
+            first_name="John",
+            last_name="Doe",
+            zipcode5="62701",
+            email_address="john.doe@example.com",
+            street_number="123",
+            street_name="Main St",
+            city="Springfield",
+            state="IL"
+        )
+        self.account_process.ext_request = self.valid_request
+
+    @patch('account_identification.services.search_with_phone')
+    @patch('account_identification.services.search_with_address')
+    @patch('account_identification.services.search_with_email')
+    @patch('account_identification.services.search_with_zip_name')
+    def test_oracle_des_process_all_valid(
+        self, mock_zip_name, mock_email, mock_address, mock_phone
+    ):
+        """Test oracle_des_process with all valid fields"""
+        # Setup mock returns
+        mock_phone.return_value = [{"phone_record": "data"}]
+        mock_address.return_value = [{"address_record": "data"}]
+        mock_email.return_value = [{"email_record": "data"}]
+        mock_zip_name.return_value = [{"zip_name_record": "data"}]
+
+        self.account_process.oracle_des_process()
+
+        # Verify all search functions were called
+        mock_phone.assert_called_once()
+        mock_address.assert_called_once()
+        mock_email.assert_called_once()
+        mock_zip_name.assert_called_once()
+
+        # Verify results were added to oracle_des_list
+        self.assertEqual(len(self.account_process.oracle_des_list), 4)
+
+    @patch('account_identification.services.search_with_phone')
+    def test_oracle_des_process_invalid_phone(self, mock_phone):
+        """Test oracle_des_process with invalid phone number"""
+        self.account_process.ext_request.phone_number = "555123"  # Invalid length
         
-        self.account_process.ext_request = self.mock_request
-
-        # Sample dataset for billing_info_specific
-        self.sample_dataset = [
-            {
-                "accountNumber": "12345",
-                "uCAN": "",
-                "emailAddress": ""
-            },
-            {
-                "accountNumber": "67890",
-                "uCAN": "",
-                "emailAddress": ""
-            }
-        ]
-
-    def test_billing_info_specific_success(self):
-        """Test billing info specific with valid account numbers"""
-        # Mock successful API response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "getSpcAccountDivisionResponse": {
-                "spcAccountDivisionList": [{
-                    "uCAN": "UCAN123",
-                    "emailAddress": "test@example.com"
-                }]
-            }
-        }
-        mock_response.raise_for_status.return_value = None
-
-        with patch('requests.request', return_value=mock_response):
-            result = self.account_process.billing_info_specific(self.sample_dataset)
-            self.assertEqual(len(result), 2)
-            self.assertEqual(result[0]['uCAN'], 'UCAN123')
-            self.assertEqual(result[0]['emailAddress'], 'test@example.com')
-
-    def test_billing_info_specific_empty_account(self):
-        """Test billing info specific with empty account number"""
-        dataset = [{"accountNumber": "", "uCAN": "", "emailAddress": ""}]
+        self.account_process.oracle_des_process()
         
-        result = self.account_process.billing_info_specific(dataset)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]['uCAN'], '')
-        self.assertEqual(result[0]['emailAddress'], '')
+        mock_phone.assert_not_called()
 
-    def test_billing_info_specific_no_matching_records(self):
-        """Test billing info specific when no records are found"""
-        # Mock API response with empty list
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "getSpcAccountDivisionResponse": {
-                "spcAccountDivisionList": []
-            }
-        }
-        mock_response.raise_for_status.return_value = None
+    @patch('account_identification.services.search_with_phone')
+    def test_oracle_des_process_bad_phone(self, mock_phone):
+        """Test oracle_des_process with blacklisted phone number"""
+        self.account_process.ext_request.phone_number = constants.BAD_NUMBERS[0]
+        
+        self.account_process.oracle_des_process()
+        
+        mock_phone.assert_not_called()
 
-        with patch('requests.request', return_value=mock_response):
-            result = self.account_process.billing_info_specific(self.sample_dataset)
-            self.assertEqual(len(result), 2)
-            self.assertEqual(result[0]['uCAN'], '')
-            self.assertEqual(result[0]['emailAddress'], '')
+    @patch('account_identification.services.search_with_address')
+    def test_oracle_des_process_missing_street(self, mock_address):
+        """Test oracle_des_process with missing street information"""
+        self.account_process.ext_request.street_name = ""
+        self.account_process.ext_request.street_number = "123"
+        
+        self.account_process.oracle_des_process()
+        
+        mock_address.assert_not_called()
 
-    def test_billing_info_specific_api_error(self):
-        """Test billing info specific with API error"""
-        with patch('requests.request', side_effect=requests.exceptions.RequestException()):
-            result = self.account_process.billing_info_specific(self.sample_dataset)
-            self.assertEqual(len(result), 2)
-            self.assertEqual(result[0]['uCAN'], '')
-            self.assertEqual(result[0]['emailAddress'], '')
+    @patch('account_identification.services.search_with_email')
+    def test_oracle_des_process_empty_email(self, mock_email):
+        """Test oracle_des_process with empty email"""
+        self.account_process.ext_request.email_address = ""
+        
+        self.account_process.oracle_des_process()
+        
+        mock_email.assert_not_called()
 
-    @patch('requests.request')
-    def test_billing_search_valid_data(self, mock_request):
-        """Test billing search with valid input data"""
-        # Mock successful API response
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "findAccountResponse": {
-                "accountList": [{
-                    "accountNumber": "12345",
-                    "uCAN": "UCAN123",
-                    "emailAddress": "test@example.com"
-                }]
-            }
-        }
-        mock_response.raise_for_status.return_value = None
-        mock_request.return_value = mock_response
-
-        self.account_process.billing_search()
-        self.assertTrue(len(self.account_process.core_services_list) > 0)
-        mock_request.assert_called_once()
-
-    def test_billing_search_missing_name(self):
-        """Test billing search with missing name"""
+    @patch('account_identification.services.search_with_zip_name')
+    def test_oracle_des_process_no_name_no_zip(self, mock_zip_name):
+        """Test oracle_des_process with no name and no zip"""
         self.account_process.ext_request.first_name = ""
-        self.account_process.billing_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
+        self.account_process.ext_request.zipcode5 = ""
+        
+        self.account_process.oracle_des_process()
+        
+        mock_zip_name.assert_not_called()
 
-    def test_billing_search_invalid_state(self):
-        """Test billing search with invalid state"""
-        self.account_process.ext_request.state = "Illinois"  # Not 2 characters
-        self.account_process.billing_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
+    @patch('account_identification.services.search_with_phone')
+    @patch('account_identification.services.search_with_address')
+    @patch('account_identification.services.search_with_email')
+    @patch('account_identification.services.search_with_zip_name')
+    def test_oracle_des_process_database_errors(
+        self, mock_zip_name, mock_email, mock_address, mock_phone
+    ):
+        """Test oracle_des_process handling of database errors"""
+        mock_phone.side_effect = oracledb.Error("DB Error")
+        mock_address.side_effect = oracledb.Error("DB Error")
+        mock_email.side_effect = oracledb.Error("DB Error")
+        mock_zip_name.side_effect = oracledb.Error("DB Error")
 
-    def test_billing_search_invalid_zip(self):
-        """Test billing search with invalid zip"""
-        self.account_process.ext_request.zipcode5 = "123"  # Not 5 digits
-        self.account_process.billing_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
+        # Should not raise exceptions
+        self.account_process.oracle_des_process()
 
-    def test_billing_search_empty_required_fields(self):
-        """Test billing search with multiple empty required fields"""
-        self.account_process.ext_request.last_name = ""
-        self.account_process.ext_request.first_name = ""
-        self.account_process.billing_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
+        mock_phone.assert_called_once()
+        mock_address.assert_called_once()
+        mock_email.assert_called_once()
+        mock_zip_name.assert_called_once()
+        
+        self.assertEqual(len(self.account_process.oracle_des_list), 0)
 
-    @patch('requests.request')
-    def test_billing_search_with_post_processing(self, mock_request):
-        """Test billing search with post-processing function"""
-        # Mock first API call (billing search)
-        first_response = MagicMock()
-        first_response.json.return_value = {
-            "findAccountResponse": {
-                "accountList": [{
-                    "accountNumber": "12345",
-                    "uCAN": "",
-                    "emailAddress": ""
-                }]
-            }
-        }
-        # Mock second API call (billing info specific)
-        second_response = MagicMock()
-        second_response.json.return_value = {
-            "getSpcAccountDivisionResponse": {
-                "spcAccountDivisionList": [{
-                    "uCAN": "UCAN123",
-                    "emailAddress": "test@example.com"
-                }]
-            }
-        }
+    @patch('account_identification.services.search_with_phone')
+    @patch('account_identification.services.search_with_address')
+    @patch('account_identification.services.search_with_email')
+    @patch('account_identification.services.search_with_zip_name')
+    def test_oracle_des_process_partial_data(
+        self, mock_zip_name, mock_email, mock_address, mock_phone
+    ):
+        """Test oracle_des_process with only some valid fields"""
+        # Setup request with only phone and email
+        self.account_process.ext_request = GeneralRequest(
+            phone_number="5551234567",
+            email_address="test@example.com",
+            # Other fields empty
+        )
 
-        mock_request.side_effect = [first_response, second_response]
+        mock_phone.return_value = [{"phone_record": "data"}]
+        mock_email.return_value = [{"email_record": "data"}]
 
-        self.account_process.billing_search()
-        self.assertTrue(len(self.account_process.core_services_list) > 0)
-        self.assertEqual(mock_request.call_count, 2)  # Should be called twice
+        self.account_process.oracle_des_process()
 
-    @patch('requests.request')
-    def test_billing_search_error_in_post_processing(self, mock_request):
-        """Test billing search when post-processing encounters an error"""
-        # Mock first API call success but second call fails
-        first_response = MagicMock()
-        first_response.json.return_value = {
-            "findAccountResponse": {
-                "accountList": [{
-                    "accountNumber": "12345",
-                    "uCAN": "",
-                    "emailAddress": ""
-                }]
-            }
-        }
-        mock_request.side_effect = [
-            first_response,  # First call succeeds
-            requests.exceptions.RequestException()  # Second call fails
-        ]
+        # Only phone and email searches should be called
+        mock_phone.assert_called_once()
+        mock_address.assert_not_called()
+        mock_email.assert_called_once()
+        mock_zip_name.assert_not_called()
 
-        self.account_process.billing_search()
-        self.assertEqual(len(self.account_process.core_services_list), 1)
-        self.assertEqual(mock_request.call_count, 2)
+        self.assertEqual(len(self.account_process.oracle_des_list), 2)
 
-    def test_billing_search_invalid_response_format(self):
-        """Test billing search with invalid response format"""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "unexpectedKey": {}  # Invalid response format
-        }
-        mock_response.raise_for_status.return_value = None
+    @patch('account_identification.services.search_with_phone')
+    def test_oracle_des_process_empty_results(self, mock_phone):
+        """Test oracle_des_process when searches return empty results"""
+        self.account_process.ext_request = GeneralRequest(
+            phone_number="5551234567"  # Only valid phone number
+        )
+        
+        mock_phone.return_value = []  # Empty result
+        
+        self.account_process.oracle_des_process()
+        
+        mock_phone.assert_called_once()
+        self.assertEqual(len(self.account_process.oracle_des_list), 0)
 
-        with patch('requests.request', return_value=mock_response):
-            self.account_process.billing_search()
-            self.assertEqual(len(self.account_process.core_services_list), 0)
+    @patch('account_identification.services.search_with_zip_name')
+    def test_oracle_des_process_only_zip(self, mock_zip_name):
+        """Test oracle_des_process with only zipcode"""
+        self.account_process.ext_request = GeneralRequest(
+            zipcode5="62701"  # Only zipcode
+        )
+
+        mock_zip_name.return_value = [{"zip_name_record": "data"}]
+
+        self.account_process.oracle_des_process()
+
+        mock_zip_name.assert_called_once()
+        self.assertEqual(len(self.account_process.oracle_des_list), 1)
+
+    @patch('account_identification.services.search_with_zip_name')
+    def test_oracle_des_process_only_name(self, mock_zip_name):
+        """Test oracle_des_process with only first name"""
+        self.account_process.ext_request = GeneralRequest(
+            first_name="John"  # Only first name
+        )
+
+        mock_zip_name.return_value = [{"zip_name_record": "data"}]
+
+        self.account_process.oracle_des_process()
+
+        mock_zip_name.assert_called_once()
+        self.assertEqual(len(self.account_process.oracle_des_list), 1)
+
+
+class TestSearchFunctions(TestCase):
+    """Test individual search functions used by oracle_des_process"""
+    
+    def setUp(self):
+        self.request = GeneralRequest(
+            phone_number="5551234567",
+            first_name="John",
+            last_name="Doe",
+            zipcode5="62701",
+            email_address="john.doe@example.com",
+            street_number="123",
+            street_name="Main St",
+            city="Springfield",
+            state="IL"
+        )
+
+    @patch('account_identification.services.query_with_params')
+    def test_search_with_phone_success(self, mock_query):
+        """Test successful phone search"""
+        mock_query.return_value = [{"ACCT_NUM": "12345"}]
+        
+        result = search_with_phone(self.request)
+        
+        self.assertTrue(len(result) > 0)
+        mock_query.assert_called_once()
+
+    @patch('account_identification.services.query_with_params')
+    def test_search_with_address_success(self, mock_query):
+        """Test successful address search"""
+        mock_query.return_value = [{"ACCT_NUM": "12345"}]
+        
+        result = search_with_address(self.request)
+        
+        self.assertTrue(len(result) > 0)
+        mock_query.assert_called_once()
+
+    @patch('account_identification.services.query_with_params')
+    def test_search_with_email_success(self, mock_query):
+        """Test successful email search"""
+        mock_query.return_value = [{"ACCT_NUM": "12345"}]
+        
+        result = search_with_email(self.request)
+        
+        self.assertTrue(len(result) > 0)
+        mock_query.assert_called_once()
+
+    @patch('account_identification.services.query_with_params')
+    def test_search_with_zip_name_success(self, mock_query):
+        """Test successful zip and name search"""
+        mock_query.return_value = [{"ACCT_NUM": "12345"}]
+        
+        result = search_with_zip_name(self.request)
+        
+        self.assertTrue(len(result) > 0)
+        mock_query.assert_called_once()
+
+    @patch('account_identification.services.query_with_params')
+    def test_search_functions_database_error(self, mock_query):
+        """Test database error handling in search functions"""
+        mock_query.side_effect = oracledb.Error("DB Error")
+
+        # Test each search function
+        with self.assertRaises(oracledb.Error):
+            search_with_phone(self.request)
+        
+        with self.assertRaises(oracledb.Error):
+            search_with_address(self.request)
+            
+        with self.assertRaises(oracledb.Error):
+            search_with_email(self.request)
+            
+        with self.assertRaises(oracledb.Error):
+            search_with_zip_name(self.request)

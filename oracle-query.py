@@ -1,20 +1,59 @@
-======================================================================
-ERROR: account_identification.tests.tests (unittest.loader._FailedTest.account_identification.tests.tests) [0.0008s]
-----------------------------------------------------------------------
-ImportError: Failed to import test module: account_identification.tests.tests
-Traceback (most recent call last):
-  File "/usr/local/lib/python3.12/unittest/loader.py", line 396, in _find_test_path
-    module = self._get_module_from_name(name)
-             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/local/lib/python3.12/unittest/loader.py", line 339, in _get_module_from_name
-    __import__(name)
-  File "/app/src/pcs3/account_identification/tests/tests.py", line 26, in <module>
-    @method_decorator(csrf_exempt)
-     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/local/lib/python3.12/site-packages/django/utils/decorators.py", line 71, in _dec
-    raise ValueError(
-ValueError: The keyword argument `name` must be the name of a method of the decorated class: <class 'account_identification.tests.tests.TestIdentifyAccountsView'>. Got '' instead.
 
+class TestSpectrumCoreAPI(TestCase):
+    def setUp(self):
+        self.account_process = AccountProcess()
+        # Setup a mock request object
+        self.mock_request = MagicMock()
+        self.mock_request.first_name = "John"
+        self.mock_request.last_name = "Doe"
+        self.mock_request.phone_number = "5551234567"
+        self.mock_request.email_address = "john.doe@example.com"
+        self.mock_request.street_number = "123"
+        self.mock_request.street_name = "Main St"
+        self.mock_request.city = "Springfield"
+        self.mock_request.state = "IL"
+        self.mock_request.zipcode5 = "62701"
+        self.mock_request.apartment = "4B"
+        
+        self.account_process.ext_request = self.mock_request
 
-----------------------------------------------------------------------
-Ran 287 tests in 33.619s
+    def test_parse_spectrum_core_api_success(self):
+        """Test successful API parsing with valid response"""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "getSpcAccountDivisionResponse": {
+                "spcAccountDivisionList": [{
+                    "accountNumber": "12345",
+                    "firstName": "John",
+                    "lastName": "Doe"
+                }]
+            }
+        }
+        mock_response.raise_for_status.return_value = None
+
+        with patch('requests.request', return_value=mock_response):
+            result = self.account_process._parse_spectrum_core_api(
+                payload={},
+                function_url="test_url",
+                function_name="test"
+            )
+            self.assertTrue(len(result) > 0)
+            self.assertEqual(len(result), 1)
+
+    def test_parse_spectrum_core_api_empty_response(self):
+        """Test API parsing with empty response list"""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "getSpcAccountDivisionResponse": {
+                "spcAccountDivisionList": []
+            }
+        }
+        mock_response.raise_for_status.return_value = None
+
+        with patch('requests.request', return_value=mock_response):
+            result = self.account_process._parse_spectrum_core_api(
+                payload={},
+                function_url="test_url",
+                function_name="test"
+            )
+            self.assertEqual(len(result), 0)

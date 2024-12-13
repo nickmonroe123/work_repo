@@ -28,28 +28,38 @@ class TestOracleDESProcess(TestCase):
         )
         self.account_process.ext_request = self.valid_request
 
-    @patch('account_identification.services.search_with_phone')
-    @patch('account_identification.services.search_with_address')
-    @patch('account_identification.services.search_with_email')
-    @patch('account_identification.services.search_with_zip_name')
-    def test_oracle_des_process_all_valid(
-        self, mock_zip_name, mock_email, mock_address, mock_phone
-    ):
+    @patch('account_identification.services.query_with_params')
+    @patch('oracledb.connect')
+    def test_oracle_des_process_all_valid(self, mock_connect, mock_query):
         """Test oracle_des_process with all valid fields"""
-        # Setup mock returns
-        mock_phone.return_value = [{"phone_record": "data"}]
-        mock_address.return_value = [{"address_record": "data"}]
-        mock_email.return_value = [{"email_record": "data"}]
-        mock_zip_name.return_value = [{"zip_name_record": "data"}]
+        # Setup mock database connection
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [("12345", "John Doe")]
+        mock_cursor.description = [("ACCT_NUM",), ("NAME",)]
+        mock_connection.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_connection
+        
+        # Setup mock query responses for each type of search
+        mock_query.return_value = [
+            {
+                "ACCT_NUM": "12345",
+                "ACCT_NAME": "John Doe",
+                "PRIMARY_NUMBER": "5551234567",
+                "EMAIL_ADDR": "john.doe@example.com",
+                "CITY_NM_BLR": "Springfield",
+                "STATE_NM_BLR": "IL",
+                "PSTL_CD_TXT_BLR": "62701",
+                "BLR_ADDR1_LINE": "123 Main St",
+                "ACCOUNTSTATUS": "Active"
+            }
+        ]
 
         self.account_process.oracle_des_process()
 
-        # Verify all search functions were called
-        mock_phone.assert_called_once()
-        mock_address.assert_called_once()
-        mock_email.assert_called_once()
-        mock_zip_name.assert_called_once()
-
+        # Verify query was called for each type of search
+        self.assertEqual(mock_query.call_count, 4)
+        
         # Verify results were added to oracle_des_list
         self.assertEqual(len(self.account_process.oracle_des_list), 4)
 
@@ -179,18 +189,28 @@ class TestOracleDESProcess(TestCase):
         mock_zip_name.assert_called_once()
         self.assertEqual(len(self.account_process.oracle_des_list), 1)
 
-    @patch('account_identification.services.search_with_zip_name')
-    def test_oracle_des_process_only_name(self, mock_zip_name):
+    @patch('account_identification.services.query_with_params')
+    @patch('oracledb.connect')
+    def test_oracle_des_process_only_name(self, mock_connect, mock_query):
         """Test oracle_des_process with only first name"""
+        # Setup mock database connection
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [("12345", "John Doe")]
+        mock_cursor.description = [("ACCT_NUM",), ("NAME",)]
+        mock_connection.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_connection
+        
+        # Setup mock query response
+        mock_query.return_value = [{"ACCT_NUM": "12345", "ACCT_NAME": "John Doe"}]
+
         self.account_process.ext_request = GeneralRequest(
             first_name="John"  # Only first name
         )
 
-        mock_zip_name.return_value = [{"zip_name_record": "data"}]
-
         self.account_process.oracle_des_process()
 
-        mock_zip_name.assert_called_once()
+        mock_query.assert_called_once()
         self.assertEqual(len(self.account_process.oracle_des_list), 1)
 
 

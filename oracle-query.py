@@ -1,4 +1,10 @@
-class TestSpectrumCoreAPI(TestCase):
+from django.test import TestCase
+from unittest.mock import patch, MagicMock
+import requests
+from account_identification.services import AccountProcess
+from account_identification import constants
+
+class TestBillingFunctions(TestCase):
     def setUp(self):
         self.account_process = AccountProcess()
         # Setup a mock request object
@@ -12,35 +18,55 @@ class TestSpectrumCoreAPI(TestCase):
         self.mock_request.city = "Springfield"
         self.mock_request.state = "IL"
         self.mock_request.zipcode5 = "62701"
-        self.mock_request.apartment = "4B"
         
         self.account_process.ext_request = self.mock_request
 
-    def test_parse_spectrum_core_api_success(self):
-        """Test successful API parsing with valid response"""
+        # Sample dataset for billing_info_specific
+        self.sample_dataset = [
+            {
+                "accountNumber": "12345",
+                "uCAN": "",
+                "emailAddress": ""
+            },
+            {
+                "accountNumber": "67890",
+                "uCAN": "",
+                "emailAddress": ""
+            }
+        ]
+
+    def test_billing_info_specific_success(self):
+        """Test billing info specific with valid account numbers"""
+        # Mock successful API response
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "getSpcAccountDivisionResponse": {
                 "spcAccountDivisionList": [{
-                    "accountNumber": "12345",
-                    "firstName": "John",
-                    "lastName": "Doe"
+                    "uCAN": "UCAN123",
+                    "emailAddress": "test@example.com"
                 }]
             }
         }
         mock_response.raise_for_status.return_value = None
 
         with patch('requests.request', return_value=mock_response):
-            result = self.account_process._parse_spectrum_core_api(
-                payload={},
-                function_url="test_url",
-                function_name="test"
-            )
-            self.assertTrue(len(result) > 0)
-            self.assertEqual(len(result), 1)
+            result = self.account_process.billing_info_specific(self.sample_dataset)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result[0]['uCAN'], 'UCAN123')
+            self.assertEqual(result[0]['emailAddress'], 'test@example.com')
 
-    def test_parse_spectrum_core_api_empty_response(self):
-        """Test API parsing with empty response list"""
+    def test_billing_info_specific_empty_account(self):
+        """Test billing info specific with empty account number"""
+        dataset = [{"accountNumber": "", "uCAN": "", "emailAddress": ""}]
+        
+        result = self.account_process.billing_info_specific(dataset)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['uCAN'], '')
+        self.assertEqual(result[0]['emailAddress'], '')
+
+    def test_billing_info_specific_no_matching_records(self):
+        """Test billing info specific when no records are found"""
+        # Mock API response with empty list
         mock_response = MagicMock()
         mock_response.json.return_value = {
             "getSpcAccountDivisionResponse": {
@@ -50,184 +76,127 @@ class TestSpectrumCoreAPI(TestCase):
         mock_response.raise_for_status.return_value = None
 
         with patch('requests.request', return_value=mock_response):
-            result = self.account_process._parse_spectrum_core_api(
-                payload={},
-                function_url="test_url",
-                function_name="test"
-            )
-            self.assertEqual(len(result), 0)
+            result = self.account_process.billing_info_specific(self.sample_dataset)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result[0]['uCAN'], '')
+            self.assertEqual(result[0]['emailAddress'], '')
 
-    def test_parse_spectrum_core_api_invalid_format(self):
-        """Test API parsing with invalid response format"""
+    def test_billing_info_specific_api_error(self):
+        """Test billing info specific with API error"""
+        with patch('requests.request', side_effect=requests.exceptions.RequestException()):
+            result = self.account_process.billing_info_specific(self.sample_dataset)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result[0]['uCAN'], '')
+            self.assertEqual(result[0]['emailAddress'], '')
+
+    @patch('requests.request')
+    def test_billing_search_valid_data(self, mock_request):
+        """Test billing search with valid input data"""
+        # Mock successful API response
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "unexpectedKey": {}
+            "findAccountResponse": {
+                "accountList": [{
+                    "accountNumber": "12345",
+                    "uCAN": "UCAN123",
+                    "emailAddress": "test@example.com"
+                }]
+            }
+        }
+        mock_response.raise_for_status.return_value = None
+        mock_request.return_value = mock_response
+
+        self.account_process.billing_search()
+        self.assertTrue(len(self.account_process.core_services_list) > 0)
+        mock_request.assert_called_once()
+
+    def test_billing_search_missing_name(self):
+        """Test billing search with missing name"""
+        self.account_process.ext_request.first_name = ""
+        self.account_process.billing_search()
+        self.assertEqual(len(self.account_process.core_services_list), 0)
+
+    def test_billing_search_invalid_state(self):
+        """Test billing search with invalid state"""
+        self.account_process.ext_request.state = "Illinois"  # Not 2 characters
+        self.account_process.billing_search()
+        self.assertEqual(len(self.account_process.core_services_list), 0)
+
+    def test_billing_search_invalid_zip(self):
+        """Test billing search with invalid zip"""
+        self.account_process.ext_request.zipcode5 = "123"  # Not 5 digits
+        self.account_process.billing_search()
+        self.assertEqual(len(self.account_process.core_services_list), 0)
+
+    def test_billing_search_empty_required_fields(self):
+        """Test billing search with multiple empty required fields"""
+        self.account_process.ext_request.last_name = ""
+        self.account_process.ext_request.first_name = ""
+        self.account_process.billing_search()
+        self.assertEqual(len(self.account_process.core_services_list), 0)
+
+    @patch('requests.request')
+    def test_billing_search_with_post_processing(self, mock_request):
+        """Test billing search with post-processing function"""
+        # Mock first API call (billing search)
+        first_response = MagicMock()
+        first_response.json.return_value = {
+            "findAccountResponse": {
+                "accountList": [{
+                    "accountNumber": "12345",
+                    "uCAN": "",
+                    "emailAddress": ""
+                }]
+            }
+        }
+        # Mock second API call (billing info specific)
+        second_response = MagicMock()
+        second_response.json.return_value = {
+            "getSpcAccountDivisionResponse": {
+                "spcAccountDivisionList": [{
+                    "uCAN": "UCAN123",
+                    "emailAddress": "test@example.com"
+                }]
+            }
+        }
+
+        mock_request.side_effect = [first_response, second_response]
+
+        self.account_process.billing_search()
+        self.assertTrue(len(self.account_process.core_services_list) > 0)
+        self.assertEqual(mock_request.call_count, 2)  # Should be called twice
+
+    @patch('requests.request')
+    def test_billing_search_error_in_post_processing(self, mock_request):
+        """Test billing search when post-processing encounters an error"""
+        # Mock first API call success but second call fails
+        first_response = MagicMock()
+        first_response.json.return_value = {
+            "findAccountResponse": {
+                "accountList": [{
+                    "accountNumber": "12345",
+                    "uCAN": "",
+                    "emailAddress": ""
+                }]
+            }
+        }
+        mock_request.side_effect = [
+            first_response,  # First call succeeds
+            requests.exceptions.RequestException()  # Second call fails
+        ]
+
+        self.account_process.billing_search()
+        self.assertEqual(len(self.account_process.core_services_list), 1)
+        self.assertEqual(mock_request.call_count, 2)
+
+    def test_billing_search_invalid_response_format(self):
+        """Test billing search with invalid response format"""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "unexpectedKey": {}  # Invalid response format
         }
         mock_response.raise_for_status.return_value = None
 
         with patch('requests.request', return_value=mock_response):
-            with self.assertRaises(ValueError):
-                self.account_process._parse_spectrum_core_api(
-                    payload={},
-                    function_url="test_url",
-                    function_name="test"
-                )
-
-    def test_parse_spectrum_core_api_request_exception(self):
-        """Test API parsing with request exception"""
-        with patch('requests.request', side_effect=requests.exceptions.RequestException()):
-            with self.assertRaises(requests.exceptions.RequestException):
-                self.account_process._parse_spectrum_core_api(
-                    payload={},
-                    function_url="test_url",
-                    function_name="test"
-                )
-
-    @patch('requests.request')
-    def test_phone_search_valid_number(self, mock_request):
-        """Test phone search with valid phone number"""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "getSpcAccountDivisionResponse": {
-                "spcAccountDivisionList": [{
-                    "accountNumber": "12345"
-                }]
-            }
-        }
-        mock_response.raise_for_status.return_value = None
-        mock_request.return_value = mock_response
-
-        self.account_process.phone_search()
-        self.assertTrue(len(self.account_process.core_services_list) > 0)
-        mock_request.assert_called_once()
-
-    def test_phone_search_invalid_length(self):
-        """Test phone search with invalid phone number length"""
-        self.account_process.ext_request.phone_number = "555123"  # Too short
-        self.account_process.phone_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
-
-    def test_phone_search_bad_number(self):
-        """Test phone search with blacklisted phone number"""
-        self.account_process.ext_request.phone_number = constants.BAD_NUMBERS[0]
-        self.account_process.phone_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
-
-    @patch('requests.request')
-    def test_name_zip_search_valid(self, mock_request):
-        """Test name and zip search with valid data"""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "getSpcAccountDivisionResponse": {
-                "spcAccountDivisionList": [{
-                    "accountNumber": "12345"
-                }]
-            }
-        }
-        mock_response.raise_for_status.return_value = None
-        mock_request.return_value = mock_response
-
-        self.account_process.name_zip_search()
-        self.assertTrue(len(self.account_process.core_services_list) > 0)
-        mock_request.assert_called_once()
-
-    def test_name_zip_search_invalid_zip(self):
-        """Test name and zip search with invalid zip code"""
-        self.account_process.ext_request.zipcode5 = "123"  # Too short
-        self.account_process.name_zip_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
-
-    def test_name_zip_search_missing_name(self):
-        """Test name and zip search with missing name"""
-        self.account_process.ext_request.first_name = ""
-        self.account_process.name_zip_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
-
-    @patch('requests.request')
-    def test_email_search_valid(self, mock_request):
-        """Test email search with valid email"""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "getSpcAccountDivisionResponse": {
-                "spcAccountDivisionList": [{
-                    "accountNumber": "12345"
-                }]
-            }
-        }
-        mock_response.raise_for_status.return_value = None
-        mock_request.return_value = mock_response
-
-        self.account_process.email_search()
-        self.assertTrue(len(self.account_process.core_services_list) > 0)
-        mock_request.assert_called_once()
-
-    def test_email_search_empty_email(self):
-        """Test email search with empty email"""
-        self.account_process.ext_request.email_address = ""
-        self.account_process.email_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
-
-    def test_clean_address_search_matching_apt(self):
-        """Test address cleaning with matching apartment number"""
-        test_records = [{
-            'addressLine2': '4B',
-            'addressLine1': '123 Main St'
-        }]
-        result = self.account_process.clean_address_search(test_records)
-        self.assertEqual(len(result), 1)
-
-    def test_clean_address_search_non_matching_apt(self):
-        """Test address cleaning with non-matching apartment number"""
-        test_records = [{
-            'addressLine2': '5C',
-            'addressLine1': '123 Main St'
-        }]
-        result = self.account_process.clean_address_search(test_records)
-        self.assertEqual(len(result), 0)
-
-    def test_clean_address_search_full_address_match(self):
-        """Test address cleaning with matching full address"""
-        test_records = [{
-            'addressLine2': '',
-            'addressLine1': '123MainSt4B'
-        }]
-        result = self.account_process.clean_address_search(test_records)
-        self.assertEqual(len(result), 1)
-
-    @patch('requests.request')
-    def test_address_search_valid(self, mock_request):
-        """Test address search with valid address"""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "getSpcAccountDivisionResponse": {
-                "spcAccountDivisionList": [{
-                    "accountNumber": "12345",
-                    "addressLine1": "123 Main St",
-                    "addressLine2": "4B"
-                }]
-            }
-        }
-        mock_response.raise_for_status.return_value = None
-        mock_request.return_value = mock_response
-
-        self.account_process.address_search()
-        self.assertTrue(len(self.account_process.core_services_list) > 0)
-        mock_request.assert_called_once()
-
-    def test_address_search_invalid_state(self):
-        """Test address search with invalid state length"""
-        self.account_process.ext_request.state = "Illinois"  # Not 2 characters
-        self.account_process.address_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
-
-    def test_address_search_missing_street(self):
-        """Test address search with missing street information"""
-        self.account_process.ext_request.street_number = ""
-        self.account_process.address_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
-
-    def test_address_search_invalid_zip(self):
-        """Test address search with invalid zip code"""
-        self.account_process.ext_request.zipcode5 = "123"  # Not 5 digits
-        self.account_process.address_search()
-        self.assertEqual(len(self.account_process.core_services_list), 0)
+            self.account_process.billing_search()
+            self.assertEqual(len(self.account_process.core_services_list), 0)

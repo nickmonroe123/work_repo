@@ -1,127 +1,102 @@
-class TestOracleDESProcess(TestCase):
-    def setUp(self):
-        self.account_process = AccountProcess()
-        # Setup a complete valid request
-        self.valid_request = GeneralRequest(
-            phone_number="5551234567",
-            first_name="John",
-            last_name="Doe",
-            zipcode5="62701",
-            email_address="john.doe@example.com",
-            street_number="123",
-            street_name="Main St",
-            city="Springfield",
-            state="IL"
-        )
-        self.account_process.ext_request = self.valid_request
+You're right. Let me help fix the test to ensure we're properly testing those lines. The issue is with how we're mocking the cursor and setting up the test.
 
-        # Setup standard mock response data
-        self.mock_record = {
-            "ACCT_NUM": "12345",
-            "ACCT_NAME": "Doe, John",
-            "PRIMARY_NUMBER": "5551234567",
-            "EMAIL_ADDR": "john.doe@example.com",
-            "CITY_NM_BLR": "Springfield",
-            "STATE_NM_BLR": "IL",
-            "PSTL_CD_TXT_BLR": "62701",
-            "BLR_ADDR1_LINE": "123 Main St",
-            "BLR_ADDR2_LINE": "",
-            "ACCOUNTSTATUS": "Active",
-            "ACCT_TYPE_CD": "RES",
-            "SRC_SYS_CD": "BHN",
-            "SPC_DIV_ID": "DIV123",
-            "UCAN": "UCAN123"
-        }
 
-        # Setup standard mock response data
-        self.mock_record_bad = {
-            "ACCT_NUM": "12345",
-            "ACCT_NAME": "Doe, John",
-            "PRIMARY_NUMBER": "5551234567",
-            "EMAIL_ADDR": "john.doe@example.com",
-            "CITY_NM_BLR": "Springfield",
-            "STATE_NM_BLR": "IL",
-            "PSTL_CD_TXT_BLR": "62701",
-            "BLR_ADDR1_LINE": "123 Main St",
-            "BLR_ADDR2_LINE": None,
-            "ACCOUNTSTATUS": "Active",
-            "ACCT_TYPE_CD": "RES",
-            "SRC_SYS_CD": "BHN",
-            "SPC_DIV_ID": "DIV123",
-            "UCAN": "UCAN123"
-        }
 
-    def setup_db_mocks(self, mock_connect):
-        """Helper method to setup database connection mocks"""
-        mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [tuple(self.mock_record.values())]
-        mock_cursor.description = [(k,) for k in self.mock_record.keys()]
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connect.return_value = mock_connection
-
-    def setup_cursor_mock(self, mock_cursor, data=None):
-        """Helper to setup cursor mock with data"""
-        if data is None:
-            data = self.mock_record_bad
-        mock_cursor.description = [(k,) for k in data.keys()]
-        mock_cursor.fetchall.return_value = [tuple(data.values())]
-        return mock_cursor
-
-    @patch('oracledb.connect')
-    def test_query_with_params_success(self, mock_connect):
-        """Test successful query execution with parameters."""
-        # Setup mocks
-        mock_cursor = MagicMock()
-        self.setup_cursor_mock(mock_cursor)
-        mock_connection = MagicMock()
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connect.return_value = mock_connection
+<function_calls>
+<invoke name="artifacts">
+<parameter name="id">test-query-params-fixed</parameter>
+<parameter name="type">application/vnd.ant.code</parameter>
+<parameter name="title">Fixed Test Cases for Complete Coverage</parameter>
+<parameter name="command">create</parameter>
+<parameter name="content">def test_query_with_params_success(self, mock_connect):
+    """Test successful query execution with parameters."""
+    # Setup mocks
+    mock_cursor = MagicMock()
     
-        # Execute query
-        sql = "SELECT * FROM test_table"
-        result = query_with_params(sql)
+    # Setup proper Oracle cursor description format
+    mock_cursor.description = [
+        ("ACCT_NUM", None, None, None, None, None, None),
+        ("ACCT_NAME", None, None, None, None, None, None),
+        ("PRIMARY_NUMBER", None, None, None, None, None, None),
+        ("EMAIL_ADDR", None, None, None, None, None, None),
+        ("CITY_NM_BLR", None, None, None, None, None, None),
+        ("STATE_NM_BLR", None, None, None, None, None, None),
+        ("PSTL_CD_TXT_BLR", None, None, None, None, None, None),
+        ("BLR_ADDR1_LINE", None, None, None, None, None, None),
+        ("BLR_ADDR2_LINE", None, None, None, None, None, None),
+        ("ACCOUNTSTATUS", None, None, None, None, None, None),
+        ("ACCT_TYPE_CD", None, None, None, None, None, None),
+        ("SRC_SYS_CD", None, None, None, None, None, None),
+        ("SPC_DIV_ID", None, None, None, None, None, None),
+        ("UCAN", None, None, None, None, None, None)
+    ]
     
-        # Verify results
-        self.assertEqual(len(result), 1)
-        mock_cursor.close.assert_called_once()
-def query_with_params(sql_query: str, params: Dict = None) -> List[OracleDESRecord]:
-    """Executes a parameterized query and returns results as OracleDESRecords.
+    # Create a row of data matching the column order
+    row_data = (
+        self.mock_record_bad["ACCT_NUM"],
+        self.mock_record_bad["ACCT_NAME"],
+        self.mock_record_bad["PRIMARY_NUMBER"],
+        self.mock_record_bad["EMAIL_ADDR"],
+        self.mock_record_bad["CITY_NM_BLR"],
+        self.mock_record_bad["STATE_NM_BLR"],
+        self.mock_record_bad["PSTL_CD_TXT_BLR"],
+        self.mock_record_bad["BLR_ADDR1_LINE"],
+        self.mock_record_bad["BLR_ADDR2_LINE"],
+        self.mock_record_bad["ACCOUNTSTATUS"],
+        self.mock_record_bad["ACCT_TYPE_CD"],
+        self.mock_record_bad["SRC_SYS_CD"],
+        self.mock_record_bad["SPC_DIV_ID"],
+        self.mock_record_bad["UCAN"]
+    )
+    
+    # Set up cursor to return one row of data
+    mock_cursor.fetchall = MagicMock(return_value=[row_data])
+    
+    # Setup mock connection
+    mock_connection = MagicMock()
+    mock_connection.cursor.return_value = mock_cursor
+    mock_connect.return_value = mock_connection
 
-    Args:
-        connection (cx_Oracle.Connection): Database connection
-        sql_query (str): SQL query with bind variables
-        params (Dict): Dictionary of parameter names and values
+    # Execute query
+    sql = "SELECT * FROM test_table"
+    result = query_with_params(sql)
 
-    Returns:
-        List[OracleDESRecord]: List of OracleDESRecords containing query results
-    """
-    try:
-        # Connect
-        connection = connect_to_oracle(**constants.DB_CONFIG)  # pragma: no cover
-        # Create cursor
-        cursor = connection.cursor()  # pragma: no cover
+    # Print debug information
+    print("Cursor description:", mock_cursor.description)
+    print("Row data:", row_data)
+    print("Result:", result)
 
-        # Execute query with parameters
-        cursor.execute(sql_query, params or {})
+    # Verify cursor operations were called
+    mock_cursor.execute.assert_called_once_with(sql, {})
+    
+    # Verify that data was processed
+    self.assertEqual(len(result), 1)
+    
+    # Verify specific fields were processed correctly
+    record = result[0]
+    self.assertEqual(record.account_number, "12345")
+    self.assertEqual(record._address_line_2, "")  # Null was replaced
+    self.assertEqual(record.email_address, "john.doe@example.com")
+    
+    # Verify cursor was closed
+    mock_cursor.close.assert_called_once()</parameter>
+<parameter name="language">python</parameter>
+</invoke>
+</function_calls>
 
-        # Get column names
-        columns = [col[0] for col in cursor.description]
+Key changes made:
 
-        # Fetch results and convert to list of dictionaries
-        results = []
-        for row in cursor:
-            results.append(dict(zip(columns, row)))
+1. Set up proper Oracle cursor description format with 7 elements per column
+2. Created row data that matches the column order exactly
+3. Set up the mock_cursor.fetchall to return a list containing one row of data
+4. Added debug prints to help diagnose any issues
+5. Added more specific assertions to verify data processing
+6. Properly aligned the column names with the OracleDESRecord field names
 
-        no_null = replace_null_with_empty_string(results)
-        return [msgspec.convert(item, OracleDESRecord) for item in no_null]
+The main issues fixed:
+1. Cursor description format now matches real Oracle format
+2. Data row format matches what would come from a real cursor
+3. Added verification of specific fields to ensure data processing
+4. Mock setup matches the actual database interaction pattern
 
-    except oracledb.Error as error:
-        logger.info(f"Database error: {error}")
-        raise
-
-    finally:
-        if cursor:
-            cursor.close()
-
-# In the query_with_params function it isnt getting to the get columns through return [msgspec] lines at al?
+Would you like me to add any additional assertions or explain any part in more detail?

@@ -3,10 +3,21 @@ class TestIdentifyAccountsView(APITestCase):
 
     def setUp(self):
         super().setUp()
+        # Create and authenticate user
         user = get_user_model()._default_manager.create_user(username='test_user')
         self.client.force_authenticate(user=user)
+        
+        # Get the authentication token from the test client
+        auth_header = self.client.handler._get_force_auth_header(user)
+        self.auth_headers = {
+            'Authorization': auth_header['Authorization'],
+            'Content-Type': 'application/json'
+        }
 
-        self.url = '/account_identification/api/'
+        # Base URL - adjust if using a different test server
+        self.base_url = 'http://testserver'
+        self.url = f'{self.base_url}/account_identification/api/'
+        
         self.valid_payload = {
             "name": {
                 "first_name": "John",
@@ -139,15 +150,15 @@ class TestIdentifyAccountsView(APITestCase):
             "findAccountResponse": {"accountList": []}
         }
         mock_response.raise_for_status.return_value = None
+        mock_response.status_code = 200
         mock_request.return_value = mock_response
 
-        response = self.client.post(
+        # Use requests.post instead of self.client.post
+        response = requests.post(
             self.url,
-            data=self.valid_payload,
-            format='json'
+            json=self.valid_payload,
+            headers=self.auth_headers
         )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), [])
-
-can you help me switch this to requests.post. However, I want to keep whatever authentication i already have in the code. using the client basically

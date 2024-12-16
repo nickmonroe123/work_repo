@@ -1,78 +1,65 @@
-from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-import msgspec
-import json
-from django.core.exceptions import ValidationError
-from typing import Any
+class TestIdentifyAccountsView(APITestCase):
+    """API Tests."""
 
-class IdentifyAccountsView(MsgSpecAPIView):
-    def post(self, request, *args, **kwargs):
-        try:
-            # Check if we have any data at all
-            if not request.data:
-                return Response(
-                    {"error": "No data provided"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+    # @patch('core.models.Request.handle_new_request', Mock())
+    # def setUp(self):
+    def setUp(self):
+        super().setUp()
+        user = get_user_model()._default_manager.create_user(username='test_user')
+        self.client.force_authenticate(user=user)
 
-            # Handle different input types
-            try:
-                if isinstance(request.data, dict):
-                    json_str = json.dumps(request.data).encode('utf-8')
-                else:
-                    json_str = request.data
-                
-                search_input = msgspec.json.decode(json_str, type=FullIdentifier)
-            
-            except msgspec.ValidationError as e:
-                # Handle msgspec validation errors (missing or invalid fields)
-                return Response(
-                    {"error": f"Validation error: {str(e)}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            except json.JSONDecodeError as e:
-                # Handle invalid JSON
-                return Response(
-                    {"error": f"Invalid JSON format: {str(e)}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            except UnicodeDecodeError as e:
-                # Handle encoding issues
-                return Response(
-                    {"error": f"Invalid character encoding: {str(e)}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            try:
-                # Attempt to process the request
-                results = identify_accounts(search_input=search_input)
-                
-                # Verify results is not None
-                if results is None:
-                    return Response(
-                        {"error": "No results returned from processing"},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-                
-                return Response(data=results)
-                
-            except ValidationError as e:
-                # Handle any validation errors from identify_accounts
-                return Response(
-                    {"error": f"Validation error during processing: {str(e)}"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            except Exception as e:
-                # Handle any other unexpected errors from identify_accounts
-                return Response(
-                    {"error": f"Error processing request: {str(e)}"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-                
-        except Exception as e:
-            # Catch any other unexpected errors
-            return Response(
-                {"error": f"Unexpected error: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        self.url = '/account_identification/api/'  # Full path based on URL configuration
+        self.valid_payload = {
+            "name": {
+                "first_name": "John",
+                "last_name": "Doe",
+                "middle_name": "",
+                "suffix": "",
+                "prefix": ""
+            },
+            "phone_number": {
+                "country_code": "",
+                "area_code": "555",
+                "exchange": "123",
+                "line_number": "4567",
+                "extension": "",
+                "type_code": ""
+            },
+            "address": {
+                "city": "Springfield",
+                "state": "IL",
+                "line1": "123 Main St",
+                "postal_code": "62701",
+                "line2": "",
+                "country_code": ""
+            },
+            "email": "john.doe@example.com"
+        }
+
+    @patch('account_identification.tasks.identify_accounts')
+    def test_post_success(self, mock_identify):
+        # Mock the identify_accounts function to return a successful response
+        mock_identify.return_value = [{"match_score": 100.0}]
+
+        response = self.client.post(
+            self.url,
+            data=self.valid_payload,
+            format='json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [{"match_score": 100.0}])
+        mock_identify.assert_called_once()
+
+    @patch('account_identification.tasks.identify_accounts')
+    def test_post_invalid_json(self, mock_identify):
+        invalid_payload = {"invalid": "data"}
+
+        response = self.client.post(
+            self.url,
+            data=invalid_payload,
+            format='json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mock_identify.assert_not_called()

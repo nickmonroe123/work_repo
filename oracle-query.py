@@ -1,19 +1,11 @@
+    def test_post_no_data(self):
+        """Test POST request with no data."""
+        response = self.client.post(
+            self.url,
+            data={},
+            format='json'
+        )
 
-def mock_spectrum_api_call(self, method, url, **kwargs):
-        """Mock response for Spectrum Core API calls"""
-        mock_response = MagicMock()
-        if 'billing' in url:
-            mock_response.json.return_value = self.mock_billing_response
-        else:
-            mock_response.json.return_value = self.mock_spectrum_response
-        mock_response.raise_for_status.return_value = None
-        return mock_response</parameter>
-def mock_spectrum_api_call(self, url, **kwargs):
-        """Mock response for Spectrum Core API calls"""
-        mock_response = MagicMock()
-        if 'billing' in url:
-            mock_response.json.return_value = self.mock_billing_response
-        else:
-            mock_response.json.return_value = self.mock_spectrum_response
-        mock_response.raise_for_status.return_value = None
-        return mock_respons
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.json())
+        self.assertIn('Validation error', response.json()['error'])

@@ -1,22 +1,27 @@
-from django.core.handlers.wsgi import WSGIRequest
-from rest_framework.views import APIView
-from rest_framework.response import Response
-import msgspec
-import json
+    def clean_output_list(self) -> list[IdentifiedAccount]:
+        sorted_data: list[IdentifiedAccount] = sorted(
+            self.output_list, key=itemgetter('match_score'), reverse=True
+        )
+        # Remove duplicates based on the fourth item
+        unique_data = []
+        seen = set()
+        for item in sorted_data:
+            acct_num = item.billing_account_number
+            if acct_num not in seen and acct_num != '':
+                unique_data.append(item)
+                seen.add(acct_num)
 
-class IdentifyAccountsView(MsgSpecAPIView):
-    def post(self, request, *args, **kwargs):
-        try:
-            # If request.data is already a dict, convert it to JSON string first
-            if isinstance(request.data, dict):
-                json_str = json.dumps(request.data).encode('utf-8')
-                search_input = msgspec.json.decode(json_str, type=FullIdentifier)
-            else:
-                # Handle case where data might come as raw JSON
-                search_input = msgspec.json.decode(request.data, type=FullIdentifier)
-        except Exception as e:
-            # Optional: Add logging here if needed
-            raise ValueError(f"Invalid input format: {str(e)}")
-            
-        results = identify_accounts(search_input=search_input)
-        return Response(data=results)
+        return unique_data
+
+class IdentifiedAccount(FullIdentifier):
+    match_score: float = 0.0
+    account_type: str = ""
+    status: str = ""
+    source: str = ""
+    ucan: str = ""
+    billing_account_number: str = ""
+    spectrum_core_account: str = ""
+    spectrum_core_division: str = ""
+
+TypeError at /account_identification/api/
+'IdentifiedAccount' object is not subscriptable

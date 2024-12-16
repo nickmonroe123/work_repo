@@ -1,115 +1,100 @@
-class TestNicknameMatching(TestCase):
-    """Test cases for nickname matching in check_match function."""
-
+class TestOracleDESProcess(TestCase):
     def setUp(self):
         self.account_process = AccountProcess()
-        
-        # Set up basic external request
-        self.account_process.ext_request = GeneralRequest(
-            first_name="",
-            last_name="Smith",
+        # Setup a complete valid request
+        self.valid_request = GeneralRequest(
             phone_number="5551234567",
-            email_address="test@example.com",
+            first_name="John",
+            last_name="Doe",
+            zipcode5="62701",
+            email_address="john.doe@example.com",
             street_number="123",
             street_name="Main St",
             city="Springfield",
-            state="IL",
-            zipcode5="62701"
+            state="IL"
         )
+        self.account_process.ext_request = self.valid_request
 
-        # Create mock record with base attributes
-        self.mock_record = MagicMock()
-        self.mock_record.phone_number = "5551234567"
-        self.mock_record.secondary_number = ""
-        self.mock_record.email_address = "test@example.com"
-        self.mock_record.last_name = "Smith"
-        self.mock_record.full_address = "123 Main St Springfield IL"
-        self.mock_record.full_address_no_apt = "123 Main St Springfield IL"
-        self.mock_record.account_number = "12345"
+        # Setup standard mock response data
+        self.mock_record = {
+            "ACCT_NUM": "12345",
+            "ACCT_NAME": "Doe, John",
+            "PRIMARY_NUMBER": "5551234567",
+            "EMAIL_ADDR": "john.doe@example.com",
+            "CITY_NM_BLR": "Springfield",
+            "STATE_NM_BLR": "IL",
+            "PSTL_CD_TXT_BLR": "62701",
+            "BLR_ADDR1_LINE": "123 Main St",
+            "BLR_ADDR2_LINE": "",
+            "ACCOUNTSTATUS": "Active",
+            "ACCT_TYPE_CD": "RES",
+            "SRC_SYS_CD": "BHN",
+            "SPC_DIV_ID": "DIV123",
+            "UCAN": "UCAN123"
+        }
 
-    def test_nickname_ext_matches_int(self):
-        """Test when external first name nickname matches internal first name."""
-        # Set up names where external is nickname of internal
-        self.account_process.ext_request.first_name = "Abby"
-        self.mock_record.first_name = "Abigail"
+    def setup_db_mocks(self, mock_connect):
+        """Helper method to setup database connection mocks"""
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [tuple(self.mock_record.values())]
+        mock_cursor.description = [(k,) for k in self.mock_record.keys()]
+        mock_connection.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_connection
 
-        # Store initial fuzzy amount for comparison
-        initial_fuzzy = self.account_process.fuzzy_amount
-        
-        # Run the check_match
-        result = self.account_process.check_match(self.mock_record)
-        
-        # Verify the match happened by checking fuzzy amount increased
-        self.assertGreater(result.match_score, initial_fuzzy)
-        
-        # Calculate the expected score manually to verify nickname matching worked
-        expected_name_score = fuzz.WRatio("abigailsmith", "abigailsmith")  # Should be 100
-        self.assertGreater(result.match_score, expected_name_score - 1)  # Allow for small floating point differences
+    @patch('account_identification.services.query_with_params')
+    @patch('oracledb.connect')
+    def test_oracle_des_process_all_valid(self, mock_connect, mock_query):
+        """Test oracle_des_process with all valid fields"""
+        self.account_process.oracle_des_list = []
+        self.setup_db_mocks(mock_connect)
+        mock_query.return_value = [self.mock_record]
 
-    def test_nickname_int_matches_ext(self):
-        """Test when internal first name nickname matches external first name."""
-        # Set up names where internal is nickname of external
-        self.account_process.ext_request.first_name = "Abraham"
-        self.mock_record.first_name = "Abe"
+        self.account_process.oracle_des_process()
 
-        # Store initial fuzzy amount for comparison
-        initial_fuzzy = self.account_process.fuzzy_amount
-        
-        # Run the check_match
-        result = self.account_process.check_match(self.mock_record)
-        
-        # Verify the match happened by checking fuzzy amount increased
-        self.assertGreater(result.match_score, initial_fuzzy)
-        
-        # Calculate the expected score manually to verify nickname matching worked
-        expected_name_score = fuzz.WRatio("abrahamsmith", "abrahamsmith")  # Should be 100
-        self.assertGreater(result.match_score, expected_name_score - 1)  # Allow for small floating point differences
+        self.assertEqual(mock_query.call_count, 4)  # All four searches executed
+        self.assertEqual(len(self.account_process.oracle_des_list), 4)
 
-    def test_no_nickname_match(self):
-        """Test when there is no nickname match between first names."""
-        # Set up names with no nickname relationship
-        self.account_process.ext_request.first_name = "John"
-        self.mock_record.first_name = "Robert"
 
-        # Store initial fuzzy amount for comparison
-        initial_fuzzy = self.account_process.fuzzy_amount
-        
-        # Run the check_match
-        result = self.account_process.check_match(self.mock_record)
-        
-        # Calculate expected score for non-matching names
-        expected_name_score = fuzz.WRatio("johnsmith", "robertsmith")
-        
-        # Verify the score reflects non-matching names
-        self.assertLess(result.match_score, 100)  # Score should be less than perfect
-        self.assertGreater(result.match_score, initial_fuzzy)  # But should still have some points
+def query_with_params(sql_query: str, params: Dict = None) -> List[OracleDESRecord]:
+    """Executes a parameterized query and returns results as OracleDESRecords.
 
-    def test_exact_name_match_no_nickname(self):
-        """Test exact name match without involving nicknames."""
-        # Set up exactly matching names
-        self.account_process.ext_request.first_name = "John"
-        self.mock_record.first_name = "John"
+    Args:
+        connection (cx_Oracle.Connection): Database connection
+        sql_query (str): SQL query with bind variables
+        params (Dict): Dictionary of parameter names and values
 
-        # Run the check_match
-        result = self.account_process.check_match(self.mock_record)
-        
-        # Calculate expected score for exact matching names
-        expected_name_score = fuzz.WRatio("johnsmith", "johnsmith")  # Should be 100
-        
-        # Verify perfect name match
-        self.assertGreater(result.match_score, expected_name_score - 1)  # Allow for small floating point differences
+    Returns:
+        List[OracleDESRecord]: List of OracleDESRecords containing query results
+    """
+    try:
+        # Connect
+        connection = connect_to_oracle(**constants.DB_CONFIG)
+        # Create cursor
+        cursor = connection.cursor()
 
-    def test_case_insensitive_nickname_match(self):
-        """Test nickname matching is case insensitive."""
-        # Set up names with different cases
-        self.account_process.ext_request.first_name = "abby"
-        self.mock_record.first_name = "ABIGAIL"
+        # Execute query with parameters
+        cursor.execute(sql_query, params or {})
 
-        # Run the check_match
-        result = self.account_process.check_match(self.mock_record)
-        
-        # Calculate expected score for matching names
-        expected_name_score = fuzz.WRatio("abigailsmith", "abigailsmith")  # Should be 100
-        
-        # Verify case-insensitive matching worked
-        self.assertGreater(result.match_score, expected_name_score - 1)
+        # Get column names
+        columns = [col[0] for col in cursor.description]
+
+        # Fetch results and convert to list of dictionaries
+        results = []
+        for row in cursor:
+            results.append(dict(zip(columns, row)))
+
+        no_null = replace_null_with_empty_string(results)
+        return [msgspec.convert(item, OracleDESRecord) for item in no_null]
+
+    except oracledb.Error as error:
+        logger.info(f"Database error: {error}")
+        raise
+
+    finally:
+        if cursor:
+            cursor.close()
+
+Can you help me write a test case that goes against the query_with_params function using django test suite and not pytest. For this specific case
+i want it to only run the code that doesnt require connection. i want 100% coverage of the file, so if some lines need ignored due to connecting to an external
+db then can you make them unneccessary, pragma, etc? Otherwise i want to mimic everything except basically the connect_to_oracle and maybe connection.cursor pieces!

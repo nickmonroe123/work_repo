@@ -1,199 +1,34 @@
-from django.contrib.auth import get_user_model
-from rest_framework.test import APITestCase
-from unittest.mock import patch
-import json
+class MsgspecJSONRenderer(BaseRenderer):
+    """Allow rendering of MsgSpec Json."""
 
-class TestIdentifyAccountsView(APITestCase):
-    """API Tests for IdentifyAccountsView."""
+    media_type = 'application/json'
+    format = 'json'
 
-    def setUp(self):
-        super().setUp()
-        user = get_user_model()._default_manager.create_user(username='test_user')
-        self.client.force_authenticate(user=user)
+    def get_indent(self, accepted_media_type, renderer_context):
+        if accepted_media_type:
+            # If the media type looks like 'application/json; indent=4',
+            # then pretty print the result.
+            # Note that we coerce `indent=0` into `indent=None`.
+            base_media_type, params = parse_header_parameters(accepted_media_type)
+            with contextlib.suppress(KeyError, ValueError, TypeError):
+                return zero_as_none(max(min(int(params['indent']), 8), 0))
+        # If 'indent' is provided in the context, then pretty print the result.
+        # E.g. If we're being called by the BrowsableAPIRenderer.
+        return renderer_context.get('indent', None)
 
-        self.url = '/account_identification/api/'
-        self.valid_payload = {
-            "name": {
-                "first_name": "John",
-                "last_name": "Doe",
-                "middle_name": "",
-                "suffix": "",
-                "prefix": ""
-            },
-            "phone_number": {
-                "country_code": "",
-                "area_code": "555",
-                "exchange": "123",
-                "line_number": "4567",
-                "extension": "",
-                "type_code": ""
-            },
-            "address": {
-                "city": "Springfield",
-                "state": "IL",
-                "line1": "123 Main St",
-                "postal_code": "62701",
-                "line2": "",
-                "country_code": ""
-            },
-            "email": "john.doe@example.com"
-        }
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        if data is None:
+            return b''
 
-    @patch('account_identification.tasks.identify_accounts')
-    def test_post_success(self, mock_identify):
-        """Test successful POST request."""
-        mock_identify.return_value = [{"match_score": 100.0}]
+        renderer_context = renderer_context or {}
+        indent = self.get_indent(accepted_media_type, renderer_context)
+        try:
+            print("hi1")
+            print(data)
+            print("hi2")
+            json_bytes = msgspec.json.encode(data)
+            return msgspec.json.format(json_bytes, indent=indent)
+        except (msgspec.EncodeError, TypeError):
+            return json.dumps(data, indent=indent).encode()
 
-        response = self.client.post(
-            self.url,
-            data=self.valid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [{"match_score": 100.0}])
-        mock_identify.assert_called_once()
-
-    def test_post_no_data(self):
-        """Test POST request with no data."""
-        response = self.client.post(
-            self.url,
-            data={},
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('No data provided', response.json()['error'])
-
-    def test_post_missing_required_field(self):
-        """Test POST request with missing required field."""
-        invalid_payload = self.valid_payload.copy()
-        del invalid_payload['name']['first_name']
-
-        response = self.client.post(
-            self.url,
-            data=invalid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('Validation error', response.json()['error'])
-
-    def test_post_invalid_field_type(self):
-        """Test POST request with invalid field type."""
-        invalid_payload = self.valid_payload.copy()
-        invalid_payload['name']['first_name'] = 123  # Should be string
-
-        response = self.client.post(
-            self.url,
-            data=invalid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('Validation error', response.json()['error'])
-
-    def test_post_malformed_json(self):
-        """Test POST request with malformed JSON."""
-        response = self.client.post(
-            self.url,
-            data="{'invalid': json",
-            content_type='application/json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('Invalid JSON format', response.json()['error'])
-
-    def test_post_invalid_email(self):
-        """Test POST request with invalid email format."""
-        invalid_payload = self.valid_payload.copy()
-        invalid_payload['email'] = 'not_an_email'
-
-        response = self.client.post(
-            self.url,
-            data=invalid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('Validation error', response.json()['error'])
-
-    @patch('account_identification.tasks.identify_accounts')
-    def test_post_processing_error(self, mock_identify):
-        """Test POST request where processing fails."""
-        mock_identify.side_effect = Exception('Processing failed')
-
-        response = self.client.post(
-            self.url,
-            data=self.valid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 500)
-        self.assertIn('error', response.json())
-        self.assertIn('Error processing request', response.json()['error'])
-
-    @patch('account_identification.tasks.identify_accounts')
-    def test_post_no_results(self, mock_identify):
-        """Test POST request where no results are found."""
-        mock_identify.return_value = None
-
-        response = self.client.post(
-            self.url,
-            data=self.valid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 404)
-        self.assertIn('error', response.json())
-        self.assertIn('No results returned', response.json()['error'])
-
-    def test_post_missing_required_nested_field(self):
-        """Test POST request with missing required nested field."""
-        invalid_payload = self.valid_payload.copy()
-        invalid_payload['address'] = {}  # Missing all required address fields
-
-        response = self.client.post(
-            self.url,
-            data=invalid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('Validation error', response.json()['error'])
-
-    def test_post_invalid_phone_number(self):
-        """Test POST request with invalid phone number format."""
-        invalid_payload = self.valid_payload.copy()
-        invalid_payload['phone_number']['area_code'] = '1234'  # Too long
-
-        response = self.client.post(
-            self.url,
-            data=invalid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('Validation error', response.json()['error'])
-
-    def test_post_extra_fields(self):
-        """Test POST request with unexpected extra fields."""
-        invalid_payload = self.valid_payload.copy()
-        invalid_payload['extra_field'] = 'unexpected'
-
-        response = self.client.post(
-            self.url,
-            data=invalid_payload,
-            format='json'
-        )
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('error', response.json())
-        self.assertIn('Validation error', response.json()['error'])
+[IdentifiedAccount(name=Name(first_name='BTASANFEC', last_name='BTASTEAM', middle_name='', suffix='', prefix=''), phone_number=PhoneNumber(country_code='', area_code='555', exchange='123', line_number='4567', extension='', type_code=''), address=Address(city='', state='', line1='', postal_code='', line2='', country_code=''), email='', match_score=126, account_type='Residential Test', status='Former', source='CNT', ucan='No uCan', billing_account_number='8260130050663312', spectrum_core_account='8260130050663312', spectrum_core_division='NTX.8260'), IdentifiedAccount(name=Name(first_name='SPECTRUM', last_name='LLC2', middle_name='', suffix='', prefix=''), phone_number=PhoneNumber(country_code='', area_code='555', exchange='123', line_number='4567', extension='', type_code=''), address=Address(city='', state='', line1='', postal_code='', line2='', country_code=''), email='', match_score=118, account_type='Internal Use', status='Active', source='CST', ucan='No uCan', billing_account_number='8260141459964920', spectrum_core_account='8260141459964920', spectrum_core_division='STX.8260'), IdentifiedAccount(name=Name(first_name='', last_name='', middle_name='', suffix='', prefix=''), phone_number=PhoneNumber(country_code='', area_code='', exchange='', line_number='', extension='', type_code=''), address=Address(city='', state='', line1='', postal_code='', line2='', country_code=''), email='test@example.com', match_score=77, account_type=<member 'description' of 'Description' objects>, status='', source='', ucan='UCAN123', billing_account_number='12345', spectrum_core_account='12345', spectrum_core_division='')]

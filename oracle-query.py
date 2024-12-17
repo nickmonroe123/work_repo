@@ -1,3 +1,5 @@
+Here is the struct code. Can you help me prove that the test_query_with_params_success receives the correct final output from query_with_params being a OracleDESRecord?
+
 from typing import TypeVar
 
 import msgspec

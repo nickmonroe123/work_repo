@@ -1,128 +1,180 @@
-from unittest import TestCase
-from unittest.mock import patch, MagicMock
+from typing import TypeVar
+
 import msgspec
-from typing import Dict, List
+from identifiers.structs import Address, FullIdentifier, Name, PhoneNumber
 
-class TestOracleDESProcess(TestCase):
-    def setUp(self):
-        self.account_process = AccountProcess()
-        # Setup a complete valid request
-        self.valid_request = GeneralRequest(
-            phone_number="5551234567",
-            first_name="John",
-            last_name="Doe",
-            zipcode5="62701",
-            email_address="john.doe@example.com",
-            street_number="123",
-            street_name="Main St",
-            city="Springfield",
-            state="IL",
+
+class IdentifiedAccount(FullIdentifier):
+    match_score: float = 0.0
+    account_type: str = ""
+    status: str = ""
+    source: str = ""
+    ucan: str = ""
+    billing_account_number: str = ""
+    spectrum_core_account: str = ""
+    spectrum_core_division: str = ""
+
+
+InternalRequestLike = TypeVar(
+    'InternalRequestLike', bound='OracleDESRecord | InternalRecord'
+)
+
+
+class ToIdentifiedAccountMixin:
+    """Provide a function to convert to an identified account."""
+
+    def to_identified_account(self: InternalRequestLike) -> IdentifiedAccount:
+        return IdentifiedAccount(
+            name=Name(
+                first_name=self.first_name,
+                last_name=self.last_name,
+            ),
+            phone_number=PhoneNumber(
+                area_code=self.phone_number[:3] if self.phone_number else '',
+                exchange=self.phone_number[3:6] if len(self.phone_number) >= 6 else '',
+                line_number=self.phone_number[6:] if len(self.phone_number) > 6 else '',
+                extension='',
+                type_code='',
+            ),
+            address=Address(
+                city=self.city,
+                state=self.state,
+                line1=self._address_line_1,
+                line2=self._address_line_2,
+                postal_code=self.zipcode5,
+            ),
+            email=self.email_address,
+            account_type=self.account_description,
+            status=self.account_status,
+            source=self.source,
+            ucan=self.ucan,
+            spectrum_core_account=self.account_number,
+            spectrum_core_division=self.division_id,
         )
-        self.account_process.ext_request = self.valid_request
 
-        # Setup standard mock response data
-        self.mock_record = {
-            "ACCT_NUM": "12345",
-            "ACCT_NAME": "Doe, John",
-            "PRIMARY_NUMBER": "5551234567",
-            "EMAIL_ADDR": "john.doe@example.com",
-            "CITY_NM_BLR": "Springfield",
-            "STATE_NM_BLR": "IL",
-            "PSTL_CD_TXT_BLR": "62701",
-            "BLR_ADDR1_LINE": "123 Main St",
-            "BLR_ADDR2_LINE": "",
-            "ACCOUNTSTATUS": "Active",
-            "ACCT_TYPE_CD": "RES",
-            "SRC_SYS_CD": "BHN",
-            "SPC_DIV_ID": "DIV123",
-            "UCAN": "UCAN123",
-        }
 
-    @patch('oracledb.connect')
-    def test_query_with_params_success(self, mock_connect):
-        """Test successful query execution with parameters."""
-        # Setup cursor mock
-        mock_cursor = MagicMock()
-        mock_cursor.description = [(k,) for k in self.mock_record.keys()]
-        # Set fetchall to return a list of tuples matching the mock_record values
-        mock_cursor.fetchall.return_value = [tuple(self.mock_record.values())]
-        # Make cursor.__iter__ return the same data as fetchall
-        mock_cursor.__iter__.return_value = [tuple(self.mock_record.values())]
-        
-        # Setup connection mock
-        mock_connection = MagicMock()
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connect.return_value = mock_connection
+class GeneralRequest(msgspec.Struct):
+    country_code: str = msgspec.field(name="countryCode", default="")
+    phone_number: str = msgspec.field(name="primaryPhone", default="")
+    first_name: str = msgspec.field(name="firstName", default="")
+    last_name: str = msgspec.field(name="lastName", default="")
+    zipcode5: str = msgspec.field(name="zipCode5", default="")
+    email_address: str = msgspec.field(name="emailAddress", default="")
+    street_number: str = msgspec.field(name="streetNumber", default="")
+    street_name: str = msgspec.field(name="streetName", default="")
+    city: str = msgspec.field(name="city", default="")
+    state: str = msgspec.field(name="state", default="")
+    apartment: str = msgspec.field(name="line2", default="")
 
-        # Execute query
-        sql = "SELECT * FROM test_table"
-        result = query_with_params(sql)
+    @classmethod
+    def from_full_identifier(cls, full_id: FullIdentifier):
+        return cls(
+            phone_number=full_id.phone_number.ten_digits_only,
+            first_name=full_id.name.first_name,
+            last_name=full_id.name.last_name,
+            zipcode5=full_id.address.simplified_postal_code,
+            email_address=full_id.email,
+            street_number=full_id.address.street_number,
+            street_name=full_id.address.street_name,
+            city=full_id.address.city,
+            state=full_id.address.state,
+            apartment=full_id.address.line2,
+        )
 
-        # Verify the query was executed
-        mock_cursor.execute.assert_called_once_with(sql, {})
-        
-        # Verify cursor was closed
-        mock_cursor.close.assert_called_once()
-        
-        # Verify results
-        self.assertEqual(len(result), 1)
-        # Verify the returned object is of type OracleDESRecord
-        self.assertIsInstance(result[0], OracleDESRecord)
-        # Verify the data matches our mock
-        self.assertEqual(result[0].ACCT_NUM, self.mock_record["ACCT_NUM"])
-        self.assertEqual(result[0].EMAIL_ADDR, self.mock_record["EMAIL_ADDR"])
 
-    @patch('oracledb.connect')
-    def test_query_with_params_empty_result(self, mock_connect):
-        """Test query execution with no results."""
-        # Setup cursor mock with no results
-        mock_cursor = MagicMock()
-        mock_cursor.description = [(k,) for k in self.mock_record.keys()]
-        mock_cursor.fetchall.return_value = []
-        mock_cursor.__iter__.return_value = []
-        
-        # Setup connection mock
-        mock_connection = MagicMock()
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connect.return_value = mock_connection
+class Description(msgspec.Struct):
+    description: str = ""
 
-        # Execute query
-        sql = "SELECT * FROM test_table"
-        result = query_with_params(sql)
 
-        # Verify empty result list
-        self.assertEqual(len(result), 0)
-        
-        # Verify cursor was closed
-        mock_cursor.close.assert_called_once()
+class InternalRecord(ToIdentifiedAccountMixin, GeneralRequest):
+    ucan: str = msgspec.field(name="uCAN", default="")
+    division_id: str = msgspec.field(name="divisionID", default="")
+    account_status: str = msgspec.field(name="accountStatus", default="")
+    secondary_number: str = msgspec.field(name="secondaryPhone", default="")
+    account_number: str = msgspec.field(name="accountNumber", default="")
+    account_description: str = ""
+    source: str = msgspec.field(name="sourceMSO", default="")
+    full_address: str = ""
+    full_address_no_apt: str = ""
+    _account_type: Description = msgspec.field(name="accountType", default=Description)
+    _address_line_1: str = msgspec.field(name="addressLine1", default="")
+    _address_line_2: str = msgspec.field(name="addressLine2", default="")
 
-def query_with_params(sql_query: str, params: Dict = None) -> List[OracleDESRecord]:
-    """Executes a parameterized query and returns results as OracleDESRecords."""
-    cursor = None
-    try:
-        # Connect
-        connection = connect_to_oracle(**constants.DB_CONFIG)
-        # Create cursor
-        cursor = connection.cursor()
+    def __post_init__(self):
+        try:
+            self.street_number, self.street_name = (
+                self._address_line_1.split(' ')[0],
+                self._address_line_1,
+            )
+        except:
+            self.street_number, self.street_name = "", ""
+        self.account_description = self._account_type.description
+        if self._address_line_2 == "":
+            self.full_address = self.street_name + " " + self.city + " " + self.state
+        else:
+            self.full_address = (
+                self.street_name
+                + " "
+                + self._address_line_2
+                + " "
+                + self.city
+                + " "
+                + self.state
+            )
+            self.full_address_no_apt = (
+                self.street_name + " " + self.city + " " + self.state
+            )
 
-        # Execute query with parameters
-        cursor.execute(sql_query, params or {})
 
-        # Get column names
-        columns = [col[0] for col in cursor.description]
+class OracleDESRecord(ToIdentifiedAccountMixin, msgspec.Struct):
+    account_number: str = msgspec.field(name="ACCT_NUM", default="")
+    phone_number: str = msgspec.field(name="PRIMARY_NUMBER", default="")
+    secondary_number: str = msgspec.field(name="secondaryPhone", default="")
+    first_name: str = msgspec.field(name="ACCT_NAME", default="")
+    last_name: str = ""
+    zipcode5: str = msgspec.field(name="PSTL_CD_TXT_BLR", default="")
+    email_address: str = msgspec.field(name="EMAIL_ADDR", default="")
+    street_number: str = ""
+    street_name: str = ""
+    city: str = msgspec.field(name="CITY_NM_BLR", default="")
+    state: str = msgspec.field(name="STATE_NM_BLR", default="")
+    ucan: str = msgspec.field(name="UCAN", default="")
+    division_id: str = msgspec.field(name="SPC_DIV_ID", default="")
+    account_status: str = msgspec.field(name="ACCOUNTSTATUS", default="")
+    account_description: str = msgspec.field(name="ACCT_TYPE_CD", default="")
+    source: str = msgspec.field(name="SRC_SYS_CD", default="")
+    full_address: str = ""
+    full_address_no_apt: str = ""
+    _address_line_1: str = msgspec.field(name="BLR_ADDR1_LINE", default="")
+    _address_line_2: str = msgspec.field(name="BLR_ADDR2_LINE", default="")
 
-        # Fetch results and convert to list of dictionaries
-        results = []
-        for row in cursor:
-            results.append(dict(zip(columns, row)))
-
-        no_null = replace_null_with_empty_string(results)
-        return [msgspec.convert(item, OracleDESRecord) for item in no_null]
-
-    except oracledb.Error as error:
-        logger.info(f"Database error: {error}")
-        raise
-
-    finally:
-        if cursor:
-            cursor.close()
+    def __post_init__(self):
+        try:
+            self.street_number, self.street_name = (
+                self._address_line_1.split(' ')[0],
+                self._address_line_1,
+            )
+        except:
+            self.street_number, self.street_name = "", ""
+        try:
+            self.first_name, self.last_name = (
+                self.first_name.split(',')[1],
+                self.first_name.split(',')[0],
+            )
+        except:
+            self.first_name, self.last_name = "", ""
+        if self._address_line_2 == "":
+            self.full_address = self.street_name + " " + self.city + " " + self.state
+        else:
+            self.full_address = (
+                self.street_name
+                + " "
+                + self._address_line_2
+                + " "
+                + self.city
+                + " "
+                + self.state
+            )
+            self.full_address_no_apt = (
+                self.street_name + " " + self.city + " " + self.state
+            )

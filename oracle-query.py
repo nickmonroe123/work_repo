@@ -1,3 +1,8 @@
+from unittest import TestCase
+from unittest.mock import patch, MagicMock
+import msgspec
+from typing import Dict, List
+
 class TestOracleDESProcess(TestCase):
     def setUp(self):
         self.account_process = AccountProcess()
@@ -33,47 +38,18 @@ class TestOracleDESProcess(TestCase):
             "UCAN": "UCAN123",
         }
 
-        # Setup standard mock response data
-        self.mock_record_bad = {
-            "ACCT_NUM": "12345",
-            "ACCT_NAME": "Doe, John",
-            "PRIMARY_NUMBER": "5551234567",
-            "EMAIL_ADDR": "john.doe@example.com",
-            "CITY_NM_BLR": "Springfield",
-            "STATE_NM_BLR": "IL",
-            "PSTL_CD_TXT_BLR": "62701",
-            "BLR_ADDR1_LINE": "123 Main St",
-            "BLR_ADDR2_LINE": None,
-            "ACCOUNTSTATUS": "Active",
-            "ACCT_TYPE_CD": "RES",
-            "SRC_SYS_CD": "BHN",
-            "SPC_DIV_ID": "DIV123",
-            "UCAN": "UCAN123",
-        }
-
-    def setup_db_mocks(self, mock_connect):
-        """Helper method to setup database connection mocks."""
-        mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = [tuple(self.mock_record.values())]
-        mock_cursor.description = [(k,) for k in self.mock_record.keys()]
-        mock_connection.cursor.return_value = mock_cursor
-        mock_connect.return_value = mock_connection
-
-    def setup_cursor_mock(self, mock_cursor, data=None):
-        """Helper to setup cursor mock with data."""
-        if data is None:
-            data = self.mock_record_bad
-        mock_cursor.description = [(k,) for k in data.keys()]
-        mock_cursor.fetchall.return_value = [tuple(data.values())]
-        return mock_cursor
-
     @patch('oracledb.connect')
     def test_query_with_params_success(self, mock_connect):
         """Test successful query execution with parameters."""
-        # Setup mocks
+        # Setup cursor mock
         mock_cursor = MagicMock()
-        self.setup_cursor_mock(mock_cursor)
+        mock_cursor.description = [(k,) for k in self.mock_record.keys()]
+        # Set fetchall to return a list of tuples matching the mock_record values
+        mock_cursor.fetchall.return_value = [tuple(self.mock_record.values())]
+        # Make cursor.__iter__ return the same data as fetchall
+        mock_cursor.__iter__.return_value = [tuple(self.mock_record.values())]
+        
+        # Setup connection mock
         mock_connection = MagicMock()
         mock_connection.cursor.return_value = mock_cursor
         mock_connect.return_value = mock_connection
@@ -82,26 +58,52 @@ class TestOracleDESProcess(TestCase):
         sql = "SELECT * FROM test_table"
         result = query_with_params(sql)
 
+        # Verify the query was executed
+        mock_cursor.execute.assert_called_once_with(sql, {})
+        
+        # Verify cursor was closed
+        mock_cursor.close.assert_called_once()
+        
         # Verify results
         self.assertEqual(len(result), 1)
+        # Verify the returned object is of type OracleDESRecord
+        self.assertIsInstance(result[0], OracleDESRecord)
+        # Verify the data matches our mock
+        self.assertEqual(result[0].ACCT_NUM, self.mock_record["ACCT_NUM"])
+        self.assertEqual(result[0].EMAIL_ADDR, self.mock_record["EMAIL_ADDR"])
+
+    @patch('oracledb.connect')
+    def test_query_with_params_empty_result(self, mock_connect):
+        """Test query execution with no results."""
+        # Setup cursor mock with no results
+        mock_cursor = MagicMock()
+        mock_cursor.description = [(k,) for k in self.mock_record.keys()]
+        mock_cursor.fetchall.return_value = []
+        mock_cursor.__iter__.return_value = []
+        
+        # Setup connection mock
+        mock_connection = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_connect.return_value = mock_connection
+
+        # Execute query
+        sql = "SELECT * FROM test_table"
+        result = query_with_params(sql)
+
+        # Verify empty result list
+        self.assertEqual(len(result), 0)
+        
+        # Verify cursor was closed
         mock_cursor.close.assert_called_once()
 
 def query_with_params(sql_query: str, params: Dict = None) -> List[OracleDESRecord]:
-    """Executes a parameterized query and returns results as OracleDESRecords.
-
-    Args:
-        connection (cx_Oracle.Connection): Database connection
-        sql_query (str): SQL query with bind variables
-        params (Dict): Dictionary of parameter names and values
-
-    Returns:
-        List[OracleDESRecord]: List of OracleDESRecords containing query results
-    """
+    """Executes a parameterized query and returns results as OracleDESRecords."""
+    cursor = None
     try:
         # Connect
-        connection = connect_to_oracle(**constants.DB_CONFIG)  # pragma: no cover
+        connection = connect_to_oracle(**constants.DB_CONFIG)
         # Create cursor
-        cursor = connection.cursor()  # pragma: no cover
+        cursor = connection.cursor()
 
         # Execute query with parameters
         cursor.execute(sql_query, params or {})

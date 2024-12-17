@@ -3,7 +3,6 @@ class IdentifyAccountsView(MsgSpecAPIView):
         search_input = self.handle_msgspec_decode(request.data, FullIdentifier)
         results = identify_accounts(search_input=search_input)
         return Response(data=results, status=status.HTTP_200_OK)
-
 class MsgSpecAPIView(APIView):
     parser_classes = [PlainParser]
     renderer_classes = [MsgspecJSONRenderer, BrowsableAPIRenderer, JSONRenderer]  # Removed MsgspecJSONRenderer as it's not standard
@@ -14,15 +13,14 @@ class MsgSpecAPIView(APIView):
                 return msgspec.json.decode(data, type=decoder_type)
             return msgspec.convert(data, type=decoder_type)
         except msgspec.ValidationError as e:
-            return Response (
-                {"error": f"Validation error: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise ValidationError(f"Validation error: {str(e)}")
         except msgspec.DecodeError as e:
-            return Response (
-                {"error": f"Malformed Json error: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            raise ValidationError(f"Malformed Json error: {str(e)}")
 
-I have the IdentifyAccountsView which is an api that will be called from externally. Can you help me setup the code to be very concise and small so that whenever the handle_msgspec_decode returns a bad response it fully
-returns the response as a 400 bad request. Currently it returns that 400 and then conitnues running the code?
+def test_post_no_data(self):
+    """Test POST request with no data."""
+    response = self.client.post(self.url, data={}, format='json')
+    
+    self.assertEqual(response.status_code, 400)
+    # self.assertIn('error', response.json())
+    self.assertIn('Validation error', response.json())

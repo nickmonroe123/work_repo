@@ -1,8 +1,1 @@
-
-pdm-lock-check...........................................................Failed
-- hook id: pdm-lock-check
-- exit code: 1
-
-WARNING: Lockfile hash doesn't match pyproject.toml, packages may be outdated
-
-I am attempting to commit my code to the repo and getting this error after having update the pyproject.toml file. How can i resolve. 
+Error: get machine connection URI: command C:\WINDOWS\System32\wsl.exe [C:\WINDOWS\System32\wsl.exe -u root -d podman-machine-default sh] failed: exit status 1 ()

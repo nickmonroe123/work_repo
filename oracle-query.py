@@ -1,4 +1,4 @@
-No, I'm not using it yet. Let me modify the code to use DRF's `exception_handler`. Here's the updated implementation:
+I'll update the MsgSpecAPIView to include both DRF's exception handler and handle specific msgspec errors at the class level:
 
 ```python
 # exceptions.py
@@ -32,14 +32,8 @@ def custom_exception_handler(exc, context):
 
     return response
 
-# settings.py
-REST_FRAMEWORK = {
-    'EXCEPTION_HANDLER': 'your_app.exceptions.custom_exception_handler',
-    'NON_FIELD_ERRORS_KEY': 'error',
-}
-
 # views.py
-from rest_framework.views import APIView
+from rest_framework.views import APIView, exception_handler
 from rest_framework.response import Response
 
 class MsgSpecAPIView(APIView):
@@ -51,6 +45,23 @@ class MsgSpecAPIView(APIView):
             return msgspec.json.decode(data, type=decoder_type)
         return msgspec.convert(data, type=decoder_type)
 
+    def handle_exception(self, exc):
+        """
+        Handle msgspec exceptions at the view level before passing to DRF's handler.
+        """
+        if isinstance(exc, msgspec.ValidationError):
+            exc = ValidationError(detail=str(exc))
+        elif isinstance(exc, msgspec.DecodeError):
+            exc = MalformedJsonError(detail=str(exc))
+
+        # Use DRF's exception handler
+        response = exception_handler(exc, {'view': self})
+        
+        if response is None:
+            return super().handle_exception(exc)
+            
+        return response
+
 class IdentifyAccountsView(MsgSpecAPIView):
     def post(self, request, *args, **kwargs):
         search_input = self.handle_msgspec_decode(request.data, FullIdentifier)
@@ -59,10 +70,14 @@ class IdentifyAccountsView(MsgSpecAPIView):
 ```
 
 Key changes:
-1. Removed the `CustomExceptionHandler` class
-2. Added `custom_exception_handler` function that uses DRF's `exception_handler`
-3. Updated the settings to use our custom exception handler
-4. Simplified the view code since exception handling is now done at the DRF level
-5. Removed try/except blocks in `handle_msgspec_decode` since exceptions will be caught by the handler
+1. Added `handle_exception` method to MsgSpecAPIView
+2. Uses both class-level exception handling and DRF's exception handler
+3. Maintains consistent error response format
+4. Handles msgspec-specific errors at both view and global levels
 
-The tests remain the same as they're already checking for the correct response format. Would you like me to add any specific test cases for the exception handler?
+The error handling now happens in this order:
+1. View-level handling in MsgSpecAPIView
+2. DRF's exception handler
+3. Default APIView exception handling if needed
+
+Would you like me to add specific test cases for the view-level exception handling?

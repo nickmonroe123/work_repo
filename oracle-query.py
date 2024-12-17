@@ -1,126 +1,66 @@
-from django.test import TestCase
-from django.urls import reverse
-from rest_framework.test import APITestCase
-from rest_framework import status
-from unittest.mock import patch
-from identifiers.structs import FullIdentifier
+======================================================================
+ERROR: test_post_no_data (account_identification.tests.tests.TestIdentifyAccountsView.test_post_no_data)
+Test POST request with no data. [0.3986s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/app/src/pcs3/utilities/views.py", line 72, in handle_msgspec_decode
+    return msgspec.json.decode(data, type=decoder_type)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+msgspec.ValidationError: Object missing required field `name`
 
-class TestIdentifyAccountsView(APITestCase):
-    def setUp(self):
-        self.url = reverse('identify-accounts')  # Adjust URL name as needed
-        self.valid_payload = {
-            "name": {
-                "first_name": "John",
-                "last_name": "Doe"
-            },
-            "phone_number": {
-                "area_code": "555",
-                "exchange": "123",
-                "line_number": "4567",
-                "extension": "",
-                "type_code": ""
-            },
-            "address": {
-                "city": "Springfield",
-                "state": "IL",
-                "line1": "123 Main St",
-                "line2": "",
-                "postal_code": "62701"
-            },
-            "email": "john.doe@example.com"
-        }
+During handling of the above exception, another exception occurred:
 
-    @patch('your_app.views.identify_accounts')
-    def test_post_success(self, mock_identify):
-        """Test successful POST request with valid data."""
-        mock_identify.return_value = {"matched_accounts": []}
-        
-        response = self.client.post(
-            self.url,
-            data=self.valid_payload,
-            format='json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        mock_identify.assert_called_once()
-        self.assertEqual(response.json(), {"matched_accounts": []})
-
-    def test_post_no_data(self):
-        """Test POST request with empty data."""
-        response = self.client.post(
-            self.url,
-            data={},
-            format='json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertTrue(
-            any('Validation error' in str(error) for error in response.json())
-        )
-
-    def test_post_malformed_json(self):
-        """Test POST request with malformed JSON."""
-        response = self.client.post(
-            self.url,
-            data="invalid json{",
-            content_type='application/json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertTrue(
-            any('Malformed Json error' in str(error) for error in response.json())
-        )
-
-    def test_post_invalid_data(self):
-        """Test POST request with invalid data structure."""
-        invalid_payload = {
-            "name": {
-                "first_name": 123,  # Should be string
-                "last_name": "Doe"
-            }
-        }
-        
-        response = self.client.post(
-            self.url,
-            data=invalid_payload,
-            format='json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertTrue(
-            any('Validation error' in str(error) for error in response.json())
-        )
-
-    def test_post_missing_required_fields(self):
-        """Test POST request with missing required fields."""
-        incomplete_payload = {
-            "name": {
-                "first_name": "John"
-                # missing last_name
-            }
-        }
-        
-        response = self.client.post(
-            self.url,
-            data=incomplete_payload,
-            format='json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertTrue(
-            any('Validation error' in str(error) for error in response.json())
-        )
-
-    @patch('your_app.views.identify_accounts')
-    def test_identify_accounts_error(self, mock_identify):
-        """Test handling of errors from identify_accounts function."""
-        mock_identify.side_effect = Exception("Internal processing error")
-        
-        response = self.client.post(
-            self.url,
-            data=self.valid_payload,
-            format='json'
-        )
-        
-        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        mock_identify.assert_called_once()
+Traceback (most recent call last):
+  File "/app/src/pcs3/account_identification/tests/tests.py", line 1056, in test_post_no_data
+    response = self.client.post(self.url, data={}, format='json')
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/test.py", line 295, in post
+    response = super().post(
+               ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/test.py", line 209, in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/test.py", line 233, in generic
+    return super().generic(
+           ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/test/client.py", line 676, in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/test.py", line 285, in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/test.py", line 237, in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/test/client.py", line 1092, in request
+    self.check_exception(response)
+  File "/usr/local/lib/python3.12/site-packages/django/test/client.py", line 805, in check_exception
+    raise exc_value
+  File "/usr/local/lib/python3.12/site-packages/django/core/handlers/exception.py", line 55, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/core/handlers/base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/views/decorators/csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/django/views/generic/base.py", line 104, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/views.py", line 509, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/views.py", line 469, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/views.py", line 480, in raise_uncaught_exception
+    raise exc
+  File "/usr/local/lib/python3.12/site-packages/rest_framework/views.py", line 506, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/account_identification/views.py", line 11, in post
+    search_input = self.handle_msgspec_decode(request.data, FullIdentifier)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/utilities/views.py", line 75, in handle_msgspec_decode
+    raise ValidationError(f"Validation error: {str(e)}")
+django.core.exceptions.ValidationError: ['Validation error: Object missing required field `name`']

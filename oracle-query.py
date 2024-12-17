@@ -1,19 +1,12 @@
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.renderers import JSONRenderer, BrowsableAPIRenderer
-from rest_framework.parsers import JSONParser
-from rest_framework.exceptions import ValidationError
-import msgspec
-from identifiers.structs import FullIdentifier
+class IdentifyAccountsView(MsgSpecAPIView):
+    def post(self, request, *args, **kwargs):
+        search_input = self.handle_msgspec_decode(request.data, FullIdentifier)
+        results = identify_accounts(search_input=search_input)
+        return Response(data=results, status=status.HTTP_200_OK)
 
 class MsgSpecAPIView(APIView):
-    parser_classes = [JSONParser]  # Changed from PlainParser
-    renderer_classes = [JSONRenderer, BrowsableAPIRenderer]  # Removed MsgspecJSONRenderer as it's not standard
-
-    def process_request(self, request_data, decoder_type):
-        """Abstract method to be implemented by child classes"""
-        raise NotImplementedError
+    parser_classes = [PlainParser]
+    renderer_classes = [MsgspecJSONRenderer, BrowsableAPIRenderer, JSONRenderer]  # Removed MsgspecJSONRenderer as it's not standard
 
     def handle_msgspec_decode(self, data, decoder_type):
         try:
@@ -21,47 +14,15 @@ class MsgSpecAPIView(APIView):
                 return msgspec.json.decode(data, type=decoder_type)
             return msgspec.convert(data, type=decoder_type)
         except msgspec.ValidationError as e:
-            raise ValidationError(f"Validation error: {str(e)}")
-        except msgspec.DecodeError as e:
-            raise ValidationError(f"Malformed Json error: {str(e)}")
-        except Exception as e:
-            raise ValidationError(f"Error processing request: {str(e)}")
-
-    def dispatch(self, request, *args, **kwargs):
-        try:
-            return super().dispatch(request, *args, **kwargs)
-        except ValidationError as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-                content_type='application/json'
-            )
-        except Exception as e:
-            return Response(
-                {"error": f"An unexpected error occurred: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content_type='application/json'
-            )
-
-class IdentifyAccountsView(MsgSpecAPIView):
-    def post(self, request, *args, **kwargs):
-        if not request.data:
-            return Response(
-                {"error": "No data provided"},
+            return Response (
+                {"error": f"Validation error: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
-        try:
-            search_input = self.handle_msgspec_decode(request.data, FullIdentifier)
-            results = identify_accounts(search_input=search_input)
-            return Response(
-                data=results,
-                status=status.HTTP_200_OK,
-                content_type='application/json'
+        except msgspec.DecodeError as e:
+            return Response (
+                {"error": f"Malformed Json error: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
             )
-        except ValidationError as e:
-            return Response(
-                {"error": str(e)},
-                status=status.HTTP_400_BAD_REQUEST,
-                content_type='application/json'
-            )
+
+I have the IdentifyAccountsView which is an api that will be called from externally. Can you help me setup the code to be very concise and small so that whenever the handle_msgspec_decode returns a bad response it fully
+returns the response as a 400 bad request. Currently it returns that 400 and then conitnues running the code?

@@ -1,12 +1,20 @@
-Let's use the `cryptography` library instead, which is more stable for handling PKCS12 certificates:
+Let's try using just `cryptography`. Make sure you have the latest version installed:
+
+```bash
+pip install --upgrade cryptography
+```
+
+Here's the updated code:
 
 ```python
 import requests
 from pathlib import Path
 import logging
 from typing import Optional
-from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
-from cryptography.hazmat.primitives.pkcs12 import load_pkcs12
+from cryptography import x509
+from cryptography.x509 import load_pem_x509_certificate
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.serialization import pkcs12
 
 logger = logging.getLogger(__name__)
 
@@ -26,22 +34,20 @@ class SpectrumCoreAuth:
                 pfx_data = pfx_file.read()
             
             # Load the PKCS12 certificate
-            p12 = load_pkcs12(
+            private_key, certificate, additional_certs = pkcs12.load_key_and_certificates(
                 pfx_data, 
                 self.pfx_password.encode()
             )
             
-            # Extract the private key and certificate
-            private_key = p12.key
-            cert = p12.cert
-            
-            # Convert to PEM format
+            # Convert private key to PEM
             self._key = private_key.private_bytes(
-                encoding=Encoding.PEM,
-                format=PrivateFormat.PKCS8,
-                encryption_algorithm=NoEncryption()
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
             )
-            self._cert = cert.public_bytes(Encoding.PEM)
+            
+            # Convert certificate to PEM
+            self._cert = certificate.public_bytes(serialization.Encoding.PEM)
             
         except Exception as e:
             logger.error(f"Failed to load PFX certificate: {str(e)}")
@@ -113,3 +119,21 @@ if __name__ == "__main__":
     PFX_PASSWORD = "your-password"
 
     try:
+        cert_auth = SpectrumCoreAuth(PFX_PATH, PFX_PASSWORD)
+        # Use cert_auth in your API calls...
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize certificate authentication: {str(e)}")
+```
+
+Changes made:
+1. Updated imports to use the correct paths in the cryptography library
+2. Used `pkcs12.load_key_and_certificates()` instead of `load_pkcs12`
+3. Properly formatted the certificate and private key using the serialization module
+
+If you're still having issues, could you share your cryptography version?
+```bash
+pip show cryptography
+```
+
+Also, make sure you have the latest version of OpenSSL installed on your system. Let me know if you need help with any of these steps!

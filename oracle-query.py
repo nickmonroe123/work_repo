@@ -1,12 +1,12 @@
-The error is due to changes in newer versions of pyOpenSSL. Let's update the code to use the current method:
+Let's use the `cryptography` library instead, which is more stable for handling PKCS12 certificates:
 
 ```python
 import requests
 from pathlib import Path
-from OpenSSL import crypto
 import logging
 from typing import Optional
-import ssl
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+from cryptography.hazmat.primitives.pkcs12 import load_pkcs12
 
 logger = logging.getLogger(__name__)
 
@@ -21,19 +21,27 @@ class SpectrumCoreAuth:
     def load_pfx(self):
         """Load certificate and private key from PFX file."""
         try:
+            # Read the PFX file
             with open(self.pfx_path, 'rb') as pfx_file:
                 pfx_data = pfx_file.read()
-                
-            # Load the PKCS12 using ssl module
-            p12 = ssl.PKCS12(pfx_data, self.pfx_password)
             
-            # Get certificate and private key
-            self._cert = p12.cert.public_bytes(crypto.FILETYPE_PEM)
-            self._key = p12.key.private_bytes(
-                encoding=crypto.FILETYPE_PEM,
-                format=crypto.PKCS8,
-                encryption_algorithm=crypto.NoEncryption()
+            # Load the PKCS12 certificate
+            p12 = load_pkcs12(
+                pfx_data, 
+                self.pfx_password.encode()
             )
+            
+            # Extract the private key and certificate
+            private_key = p12.key
+            cert = p12.cert
+            
+            # Convert to PEM format
+            self._key = private_key.private_bytes(
+                encoding=Encoding.PEM,
+                format=PrivateFormat.PKCS8,
+                encryption_algorithm=NoEncryption()
+            )
+            self._cert = cert.public_bytes(Encoding.PEM)
             
         except Exception as e:
             logger.error(f"Failed to load PFX certificate: {str(e)}")
@@ -105,32 +113,3 @@ if __name__ == "__main__":
     PFX_PASSWORD = "your-password"
 
     try:
-        cert_auth = SpectrumCoreAuth(PFX_PATH, PFX_PASSWORD)
-        # Use cert_auth in your API calls...
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize certificate authentication: {str(e)}")
-```
-
-Key changes:
-1. Used `ssl.PKCS12` instead of `crypto.load_pkcs12`
-2. Updated the certificate and key extraction methods
-3. Added more robust error handling
-
-To use this:
-
-1. Make sure you have the required packages:
-```bash
-pip install requests pyOpenSSL cryptography
-```
-
-2. The PFX file path and password should be configured in your settings or environment variables:
-```python
-# settings.py or similar
-SPECTRUM_CORE_AUTH = {
-    'PFX_PATH': '/path/to/your/certificate.pfx',
-    'PFX_PASSWORD': 'your-pfx-password'
-}
-```
-
-Let me know if you need any clarification or run into other issues!

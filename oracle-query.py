@@ -1,18 +1,60 @@
-Here's the implementation using both a .cert file and .pem key file:
+Here's the implementation using certificate and key strings directly in the code:
 
 ```python
 import requests
 from pathlib import Path
 import logging
 from typing import Optional
+import tempfile
+import os
 
 logger = logging.getLogger(__name__)
 
 class SpectrumCoreAuth:
-    def __init__(self, cert_path: str, key_path: str):
-        self.cert_path = cert_path
-        self.key_path = key_path
-        self.cert = (self.cert_path, self.key_path)
+    def __init__(self, cert_string: str, key_string: str):
+        """Initialize with certificate and key strings."""
+        self.cert_string = cert_string
+        self.key_string = key_string
+        self._cert_file = None
+        self._key_file = None
+        self.create_temp_files()
+
+    def create_temp_files(self):
+        """Create temporary files for the certificate and key."""
+        try:
+            # Create temp file for cert
+            self._cert_file = tempfile.NamedTemporaryFile(delete=False, suffix='.crt')
+            self._cert_file.write(self.cert_string.encode())
+            self._cert_file.flush()
+
+            # Create temp file for key
+            self._key_file = tempfile.NamedTemporaryFile(delete=False, suffix='.key')
+            self._key_file.write(self.key_string.encode())
+            self._key_file.flush()
+
+        except Exception as e:
+            logger.error(f"Failed to create temporary certificate files: {str(e)}")
+            self.cleanup()
+            raise
+
+    def cleanup(self):
+        """Clean up temporary files."""
+        try:
+            if self._cert_file:
+                os.unlink(self._cert_file.name)
+            if self._key_file:
+                os.unlink(self._key_file.name)
+        except Exception as e:
+            logger.error(f"Error cleaning up temporary files: {str(e)}")
+
+    @property
+    def cert(self):
+        """Return certificate and key file paths as tuple."""
+        return (self._cert_file.name, self._key_file.name) if self._cert_file and self._key_file else None
+
+    def __del__(self):
+        """Ensure cleanup on object destruction."""
+        self.cleanup()
 
 def _parse_spectrum_core_api(
         self,
@@ -31,20 +73,15 @@ def _parse_spectrum_core_api(
                 "method": "POST",
                 "url": function_url,
                 "json": payload,
-                "verify": True  # Verify SSL cert from server
+                "verify": True
             }
 
-            # Add certificate auth if provided
             if cert_auth:
                 request_kwargs["cert"] = cert_auth.cert
             
-            # Make the post request call out to spectrum core services
             response = requests.request(**request_kwargs)
-            
-            # Will return an HTTPError object if an error has occurred during the process
             response.raise_for_status()
             
-            # Process response
             response_key_contents = response.json().get(response_key)
             if response_key_contents is None:
                 logger.error(
@@ -69,12 +106,17 @@ def _parse_spectrum_core_api(
 
 # Usage example:
 if __name__ == "__main__":
-    # Example configuration
-    CERT_FILE = "path/to/your/certificate.cert"
-    KEY_FILE = "path/to/your/private.pem"
+    # Certificate and key strings directly in code
+    CERT_STRING = """-----BEGIN CERTIFICATE-----
+    Your certificate content here
+    -----END CERTIFICATE-----"""
+
+    KEY_STRING = """-----BEGIN PRIVATE KEY-----
+    Your private key content here
+    -----END PRIVATE KEY-----"""
 
     try:
-        cert_auth = SpectrumCoreAuth(CERT_FILE, KEY_FILE)
+        cert_auth = SpectrumCoreAuth(CERT_STRING, KEY_STRING)
         
         # Example API call
         payload = {"some": "data"}
@@ -90,31 +132,43 @@ if __name__ == "__main__":
         
     except Exception as e:
         logger.error(f"Failed to make API call: {str(e)}")
+    finally:
+        if 'cert_auth' in locals():
+            cert_auth.cleanup()
 ```
+
+Key features of this implementation:
+1. Takes certificate and key as strings directly
+2. Creates temporary files in the background (required for requests library)
+3. Automatically cleans up temporary files
+4. Handles errors appropriately
 
 You would use it like this:
 ```python
-# In your settings.py or similar:
-SPECTRUM_CORE_AUTH = {
-    'CERT_PATH': '/path/to/your/certificate.cert',
-    'KEY_PATH': '/path/to/your/private.pem'
-}
+# Your certificate strings
+CERT_STRING = """-----BEGIN CERTIFICATE-----
+MIIDXTCCAkWgAwIBAgIJAJC1HiIAZAiIMA0GCSqGSIb3DQEBCwUAMEUxCzAJBgNV
+...rest of your certificate...
+-----END CERTIFICATE-----"""
 
-# In your code:
-from django.conf import settings
+KEY_STRING = """-----BEGIN PRIVATE KEY-----
+MIIBPQIBAAJBAKWXp/qrjL9QNcuKQR2PGzyexBaGNN2vYPq4PW3Q/L/zqKR0yN0T
+...rest of your private key...
+-----END PRIVATE KEY-----"""
 
-cert_auth = SpectrumCoreAuth(
-    settings.SPECTRUM_CORE_AUTH['CERT_PATH'],
-    settings.SPECTRUM_CORE_AUTH['KEY_PATH']
+# Initialize auth
+cert_auth = SpectrumCoreAuth(CERT_STRING, KEY_STRING)
+
+# Use in your API calls
+result = _parse_spectrum_core_api(
+    payload=payload,
+    function_url=url,
+    function_name="get_account_info",
+    cert_auth=cert_auth
 )
-
-# Then use cert_auth in your API calls
 ```
 
-This is much simpler than the previous versions because:
-1. Uses requests' built-in cert parameter
-2. Doesn't require custom adapters
-3. Files are read directly by requests
-4. No need to handle the certificate data ourselves
-
-Would you like me to add any error handling or validation for the file paths?
+Would you like me to:
+1. Add validation for the certificate/key string format?
+2. Add more error handling?
+3. Show how to store these strings securely in settings?

@@ -1,58 +1,71 @@
-Yes, you can use a bytes object directly with requests by modifying how we handle the certificate data. Here's the updated version:
+Yes, you can store PFX certificates in Centrify (now part of Delinea). Here's a general approach for managing certificates with Centrify:
 
+1. Using Centrify's Secret Management:
 ```python
-import requests
-from pathlib import Path
+from centrify.platform import Platform
+import base64
 import logging
-from typing import Optional
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.serialization import pkcs12
-from requests.adapters import HTTPAdapter
-from urllib3.util.ssl_ import create_urllib3_context
-import ssl
 
 logger = logging.getLogger(__name__)
 
-class PFXAdapter(HTTPAdapter):
-    """Custom HTTP adapter that uses PFX certificate data directly."""
-    def __init__(self, pfx_data, pfx_password, **kwargs):
-        self.pfx_data = pfx_data
-        self.pfx_password = pfx_password
-        super().__init__(**kwargs)
-
-    def init_poolmanager(self, *args, **kwargs):
-        context = create_urllib3_context()
-        context.load_cert_chain_from_buffer(
-            self.pfx_data,
-            password=self.pfx_password.encode()
-        )
-        kwargs['ssl_context'] = context
-        return super().init_poolmanager(*args, **kwargs)
-
-class SpectrumCoreAuth:
-    def __init__(self, pfx_path: str, pfx_password: str):
-        self.pfx_path = pfx_path
-        self.pfx_password = pfx_password
+class CentrifyPFXAuth:
+    def __init__(self, secret_id: str):
+        self.secret_id = secret_id
+        self.platform = None
         self.session = None
-        self.setup_session()
+        self.setup_centrify()
 
-    def setup_session(self):
+    def setup_centrify(self):
+        """Setup connection to Centrify and retrieve PFX."""
+        try:
+            # Initialize Centrify Platform
+            self.platform = Platform()
+            
+            # Retrieve secret from Centrify
+            secret = self.platform.get_secret(self.secret_id)
+            
+            # The secret should contain both the PFX and password
+            pfx_data = base64.b64decode(secret['pfx'])
+            pfx_password = secret['password']
+            
+            # Setup the session with PFX data
+            self.setup_session(pfx_data, pfx_password)
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve certificate from Centrify: {str(e)}")
+            raise
+
+    def setup_session(self, pfx_data: bytes, pfx_password: str):
         """Setup a session with the PFX certificate."""
         try:
-            # Read the PFX file
-            with open(self.pfx_path, 'rb') as pfx_file:
-                pfx_data = pfx_file.read()
-            
             # Create a session with our custom adapter
             self.session = requests.Session()
-            adapter = PFXAdapter(pfx_data, self.pfx_password)
+            adapter = PFXAdapter(pfx_data, pfx_password)
             self.session.mount('https://', adapter)
             
         except Exception as e:
             logger.error(f"Failed to setup certificate session: {str(e)}")
             raise
+```
 
+2. Store the certificate in Centrify:
+```bash
+# Using Centrify CLI (adjust commands based on your Centrify version)
+centrify vault secret add --name "spectrum_core_pfx" --secret-file "/path/to/cert.pfx" --description "Spectrum Core API Certificate"
+centrify vault secret set-password --name "spectrum_core_pfx" --password "your-pfx-password"
+```
+
+3. Configuration in settings:
+```python
+# settings.py
+CENTRIFY_CONFIG = {
+    'CERT_SECRET_ID': 'spectrum_core_pfx',
+    # Other Centrify configuration...
+}
+```
+
+4. Usage in your code:
+```python
 def _parse_spectrum_core_api(
         self,
         payload: dict,
@@ -61,12 +74,11 @@ def _parse_spectrum_core_api(
         post_processing_function=None,
         response_key='getSpcAccountDivisionResponse',
         response_list_key='spcAccountDivisionList',
-        cert_auth: Optional[SpectrumCoreAuth] = None,
+        cert_auth: Optional[CentrifyPFXAuth] = None,
     ) -> list[InternalRecord]:
         """Helper function for parsing information from spectrum core services
         account API."""
         try:
-            # Make the post request call out to spectrum core services
             if cert_auth and cert_auth.session:
                 response = cert_auth.session.post(
                     function_url,
@@ -80,33 +92,54 @@ def _parse_spectrum_core_api(
                     verify=True
                 )
             
-            # Will return an HTTPError object if an error has occurred during the process
-            response.raise_for_status()
-            
-            # Process response
-            response_key_contents = response.json().get(response_key)
-            if response_key_contents is None:
-                logger.error(
-                    f"The format of the JSON has been changed during {function_name}! New format: {response.json()}"
-                )
-                raise ValueError('Format of Spectrum Core Account API has changed')
-                
-            core_services_list_to_add = response_key_contents.get(response_list_key, [])
-            if post_processing_function is not None:
-                core_services_list_to_add = post_processing_function(
-                    core_services_list_to_add
-                )
-            
-            return [
-                msgspec.convert(x, type=InternalRecord)
-                for x in core_services_list_to_add
-            ]
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error in spectrum core api search: {function_name}")
-            raise e
+            # Rest of your code...
+```
 
-# Usage example:
-if __name__ == "__main__":
-    # Example configuration
-    PF
+5. Example implementation:
+```python
+from django.conf import settings
+
+# Initialize with secret ID from settings
+cert_auth = CentrifyPFXAuth(settings.CENTRIFY_CONFIG['CERT_SECRET_ID'])
+
+# Use in your API calls
+result = _parse_spectrum_core_api(
+    payload=payload,
+    function_url=url,
+    function_name="get_account_info",
+    cert_auth=cert_auth
+)
+```
+
+You'll need to:
+1. Install Centrify SDK:
+```bash
+pip install centrify-platform-python
+```
+
+2. Configure Centrify authentication:
+```python
+# settings.py
+CENTRIFY_CONFIG = {
+    'TENANT_URL': 'your-tenant-url',
+    'CLIENT_ID': 'your-client-id',
+    'CLIENT_SECRET': 'your-client-secret',
+    'SCOPE': 'your-scope',
+    'CERT_SECRET_ID': 'spectrum_core_pfx'
+}
+```
+
+3. Set up proper permissions in Centrify:
+- Create a service account
+- Grant necessary permissions for secret access
+- Configure secret rotation policies if needed
+
+Benefits of using Centrify:
+1. Secure certificate storage
+2. Centralized management
+3. Access control
+4. Audit logging
+5. Automatic rotation if configured
+6. No local certificate storage needed
+
+Let me know if you need help with any specific part of the implementation!

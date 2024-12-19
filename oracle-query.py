@@ -2,96 +2,197 @@ import requests
 from OpenSSL import crypto
 import tempfile
 import os
-import urllib3
+from pathlib import Path
+import logging
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.ssl_ import create_urllib3_context
+from requests.packages.urllib3.util.ssl_ import (
+    create_urllib3_context,
+    DEFAULT_CIPHERS,
+    OP_NO_SSLv2,
+    OP_NO_SSLv3,
+    OP_NO_TLSv1,
+    OP_NO_TLSv1_1,
+    CERT_REQUIRED
+)
 
-class CustomHttpAdapter(HTTPAdapter):
-    def __init__(self, *args, **kwargs):
-        self.ssl_context = create_urllib3_context(
-            cert_reqs='CERT_NONE',
-            options=0x4  # OP_LEGACY_SERVER_CONNECT
-        )
-        super().__init__(*args, **kwargs)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+class SecureHTTPAdapter(HTTPAdapter):
+    """Custom HTTP adapter with strong SSL/TLS settings"""
+    
+    SECURE_CIPHERS = (
+        'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:'
+        'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:'
+        'ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:'
+        'DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384'
+    )
+
+    def __init__(self, ssl_context=None):
+        self.ssl_context = ssl_context
+        super().__init__()
 
     def init_poolmanager(self, *args, **kwargs):
-        kwargs['ssl_context'] = self.ssl_context
+        context = create_urllib3_context(
+            ciphers=self.SECURE_CIPHERS,
+            cert_reqs=CERT_REQUIRED,
+            options=OP_NO_SSLv2 | OP_NO_SSLv3 | OP_NO_TLSv1 | OP_NO_TLSv1_1
+        )
+        
+        if self.ssl_context:
+            context = self.ssl_context
+            
+        kwargs['ssl_context'] = context
         return super().init_poolmanager(*args, **kwargs)
 
-    def proxy_manager_for(self, *args, **kwargs):
-        kwargs['ssl_context'] = self.ssl_context
-        return super().proxy_manager_for(*args, **kwargs)
+class CertificateValidator:
+    """Handles certificate validation and chain verification"""
+    
+    def __init__(self, trusted_ca_path: str):
+        self.trusted_ca_path = trusted_ca_path
+        self._validate_ca_cert()
+
+    def _validate_ca_cert(self):
+        """Validate the CA certificate"""
+        try:
+            with open(self.trusted_ca_path, 'rb') as ca_file:
+                ca_data = ca_file.read()
+                crypto.load_certificate(crypto.FILETYPE_PEM, ca_data)
+        except Exception as e:
+            raise ValueError(f"Invalid CA certificate: {e}")
+
+    def verify_cert_chain(self, cert_path: str) -> bool:
+        """Verify certificate chain against trusted CA"""
+        try:
+            with open(cert_path, 'rb') as cert_file:
+                cert_data = cert_file.read()
+                cert = crypto.load_certificate(crypto.FILETYPE_PEM, cert_data)
+            
+            with open(self.trusted_ca_path, 'rb') as ca_file:
+                ca_data = ca_file.read()
+                ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, ca_data)
+            
+            # Create a certificate store and add the CA cert
+            store = crypto.X509Store()
+            store.add_cert(ca_cert)
+            
+            # Create a certificate context
+            store_ctx = crypto.X509StoreContext(store, cert)
+            
+            # Verify the certificate
+            store_ctx.verify_certificate()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Certificate chain verification failed: {e}")
+            return False
 
 class SpectrumCoreAuth:
-    def __init__(self, pfx_path: str, pfx_password: str, digicert_path: str = None):
+    """Handles authentication and certificate management for Spectrum Core API"""
+    
+    def __init__(self, pfx_path: str, pfx_password: str, digicert_path: str):
         """
-        Initialize authentication with PFX certificate and optional DigiCert root certificate
+        Initialize authentication with PFX certificate and DigiCert root certificate
         
         Args:
             pfx_path: Path to the .pfx/.p12 file
             pfx_password: Password for the PFX file
-            digicert_path: Optional path to DigiCert root certificate
+            digicert_path: Path to DigiCert root certificate
         """
-        self.pfx_path = pfx_path
+        self.pfx_path = Path(pfx_path)
         self.pfx_password = pfx_password
-        self.digicert_path = digicert_path
+        self.digicert_path = Path(digicert_path)
         self._temp_files = []
         
-        # Extract certificate and private key from PFX
+        # Validate input files
+        self._validate_input_files()
+        
+        # Extract and validate certificates
         self.cert_path, self.key_path = self._extract_pfx()
         self.cert = (self.cert_path, self.key_path)
+        
+        # Initialize certificate validator
+        self.validator = CertificateValidator(self.digicert_path)
+        
+        # Verify certificate chain
+        if not self.validator.verify_cert_chain(self.cert_path):
+            raise ValueError("Certificate chain validation failed")
+
+    def _validate_input_files(self):
+        """Validate that all required files exist"""
+        if not self.pfx_path.exists():
+            raise FileNotFoundError(f"PFX file not found: {self.pfx_path}")
+        if not self.digicert_path.exists():
+            raise FileNotFoundError(f"DigiCert file not found: {self.digicert_path}")
 
     def _extract_pfx(self):
-        """Extract certificate and private key from PFX file into temporary files"""
-        # Read PFX file
-        with open(self.pfx_path, 'rb') as pfx_file:
-            pfx_data = pfx_file.read()
+        """Extract certificate and private key from PFX file"""
+        try:
+            with open(self.pfx_path, 'rb') as pfx_file:
+                pfx_data = pfx_file.read()
             
-        # Load PFX
-        p12 = crypto.load_pkcs12(pfx_data, self.pfx_password.encode())
-        
-        # Create temporary files for cert and key
-        cert_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.crt')
-        key_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.key')
-        self._temp_files.extend([cert_temp.name, key_temp.name])
-        
-        # Write certificate
-        cert_data = crypto.dump_certificate(crypto.FILETYPE_PEM, p12.get_certificate())
-        cert_temp.write(cert_data)
-        cert_temp.close()
-        
-        # Write private key
-        key_data = crypto.dump_privatekey(crypto.FILETYPE_PEM, p12.get_privatekey())
-        key_temp.write(key_data)
-        key_temp.close()
-        
-        return cert_temp.name, key_temp.name
+            # Load PFX
+            p12 = crypto.load_pkcs12(pfx_data, self.pfx_password.encode())
+            
+            # Create temporary files
+            cert_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.crt')
+            key_temp = tempfile.NamedTemporaryFile(delete=False, suffix='.key')
+            self._temp_files.extend([cert_temp.name, key_temp.name])
+            
+            # Write certificate
+            cert_data = crypto.dump_certificate(crypto.FILETYPE_PEM, p12.get_certificate())
+            cert_temp.write(cert_data)
+            cert_temp.close()
+            
+            # Write private key
+            key_data = crypto.dump_privatekey(crypto.FILETYPE_PEM, p12.get_privatekey())
+            key_temp.write(key_data)
+            key_temp.close()
+            
+            return cert_temp.name, key_temp.name
+            
+        except Exception as e:
+            logger.error(f"Error extracting PFX: {e}")
+            self.cleanup()
+            raise
 
     def cleanup(self):
         """Remove temporary certificate and key files"""
         for temp_file in self._temp_files:
             try:
                 os.remove(temp_file)
-            except OSError:
-                pass
+            except OSError as e:
+                logger.warning(f"Error removing temporary file {temp_file}: {e}")
 
     def __del__(self):
         """Ensure cleanup on object destruction"""
         self.cleanup()
 
-def make_spectrum_request(phone_number: str, cert_auth: SpectrumCoreAuth, verify_ssl: bool = False):
+def create_secure_session(cert_auth: SpectrumCoreAuth) -> requests.Session:
+    """Create a secure session with proper SSL configuration"""
+    session = requests.Session()
+    adapter = SecureHTTPAdapter()
+    session.mount('https://', adapter)
+    return session
+
+def make_spectrum_request(phone_number: str, cert_auth: SpectrumCoreAuth) -> dict:
     """
-    Make a request to the Spectrum Core API
+    Make a secure request to the Spectrum Core API
     
     Args:
         phone_number: Phone number to query
         cert_auth: SpectrumCoreAuth instance
-        verify_ssl: Whether to verify SSL certificate
+    
+    Returns:
+        API response as dictionary
     """
     system_id = "ComplianceService"
     url = "https://spectrumcore.charter.com:7443/spectrum-core/services/account/ept/getSpcAccountDivisionV1x1"
 
-    # Set up the request payload
     payload = {
         "getSpcAccountDivisionRequest": {
             "systemID": system_id,
@@ -99,66 +200,52 @@ def make_spectrum_request(phone_number: str, cert_auth: SpectrumCoreAuth, verify
         }
     }
 
-    # Create a session with custom SSL handling
-    session = requests.Session()
-    adapter = CustomHttpAdapter()
-    session.mount('https://', adapter)
-
-    # Configure request parameters
-    request_kwargs = {
-        "method": "POST",
-        "url": url,
-        "json": payload,
-        "verify": verify_ssl,
-        "cert": cert_auth.cert
-    }
+    session = create_secure_session(cert_auth)
 
     try:
-        # Make the request
-        response = session.request(**request_kwargs)
+        response = session.post(
+            url=url,
+            json=payload,
+            cert=cert_auth.cert,
+            verify=cert_auth.digicert_path
+        )
         response.raise_for_status()
         
-        # Process response
         return response.json()['getSpcAccountDivisionResponse']['spcAccountDivisionList']
+        
     except requests.exceptions.SSLError as ssl_err:
-        print(f"SSL Certificate Error: {ssl_err}")
-        return None
+        logger.error(f"SSL Certificate Error: {ssl_err}")
+        raise
     except requests.exceptions.RequestException as req_err:
-        print(f"Request Error: {req_err}")
-        return None
+        logger.error(f"Request Error: {req_err}")
+        raise
     except Exception as e:
-        print(f"Error processing response: {e}")
-        return None
+        logger.error(f"Error processing response: {e}")
+        raise
     finally:
         session.close()
 
 # Example usage
 if __name__ == "__main__":
-    # Disable SSL verification warnings if we're not verifying
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-    PFX_FILE = "your_cert.pfx"  # Replace with your PFX file path
-    PFX_PASSWORD = "your_password"  # Replace with your PFX password
-    DIGICERT_FILE = "digicert_root.cer"  # Optional, replace with your DigiCert file path
-
-    # Initialize authentication
-    cert_auth = SpectrumCoreAuth(
-        pfx_path=PFX_FILE,
-        pfx_password=PFX_PASSWORD,
-        digicert_path=DIGICERT_FILE
-    )
-
     try:
-        # Make the request with SSL verification disabled
+        # Initialize authentication with proper certificate paths
+        cert_auth = SpectrumCoreAuth(
+            pfx_path="path/to/your/cert.pfx",
+            pfx_password="your_pfx_password",
+            digicert_path="path/to/your/digicert.cer"
+        )
+
+        # Make the secure request
         results = make_spectrum_request(
             phone_number="9809149590",
-            cert_auth=cert_auth,
-            verify_ssl=False  # Set to True if you want to verify SSL
+            cert_auth=cert_auth
         )
         
-        if results is not None:
-            print("Results:")
-            print(results)
+        print("Results:", results)
+        
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
+        raise
     finally:
-        # Cleanup temporary files
-        cert_auth.cleanup()
+        if 'cert_auth' in locals():
+            cert_auth.cleanup()

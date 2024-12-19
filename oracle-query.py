@@ -1,9 +1,9 @@
-I'll help you modify the Celery task to run 3 subtasks for processing Jira updates and changes. Here's the implementation:
+Yes, if you run the tasks sequentially and the first one fails, it will break the chain and the subsequent tasks won't execute. Let me modify the code to handle failures more gracefully:
 
 ```python
-from celery import shared_task, group
+from celery import shared_task
 from celery.utils.log import get_task_logger
-import services  # your services module
+import services
 
 logger = get_task_logger(__name__)
 
@@ -20,23 +20,29 @@ def fetch_jira_updates(self):
         }
     except Exception as e:
         logger.error(f"Error fetching Jira updates: {e}")
-        raise self.retry(exc=e, countdown=60, max_retries=3)
+        return {
+            "status": "error",
+            "task": "fetch",
+            "error": str(e),
+            "updated_issues": []  # Return empty list on failure
+        }
 
 @shared_task(bind=True)
 def process_issue_updates(self, result):
     """Subtask 2: Processes issue updates"""
     logger.info("Processing Jira issue updates")
     try:
-        if not result or not result.get("updated_issues"):
-            return {"status": "success", "task": "process", "message": "No updates to process"}
+        if result.get("status") == "error":
+            logger.warning(f"Previous task failed: {result.get('error')}")
+            return result  # Pass through the error status
             
         updated_issues = result.get("updated_issues", [])
-        
+        if not updated_issues:
+            return {"status": "success", "task": "process", "message": "No updates to process"}
+            
         # Process updates logic here
-        # For example:
         processed_updates = []
         for issue in updated_issues:
-            # Add your processing logic
             processed_updates.append({
                 "issue_key": issue.get("key"),
                 "status": "processed"
@@ -50,23 +56,29 @@ def process_issue_updates(self, result):
         }
     except Exception as e:
         logger.error(f"Error processing updates: {e}")
-        raise self.retry(exc=e, countdown=60, max_retries=3)
+        return {
+            "status": "error",
+            "task": "process",
+            "error": str(e),
+            "processed_issues": []
+        }
 
 @shared_task(bind=True)
 def sync_database_records(self, result):
     """Subtask 3: Syncs processed updates with database"""
     logger.info("Syncing processed updates with database")
     try:
-        if not result or not result.get("processed_issues"):
-            return {"status": "success", "task": "sync", "message": "No updates to sync"}
+        if result.get("status") == "error":
+            logger.warning(f"Previous task failed: {result.get('error')}")
+            return result  # Pass through the error status
             
         processed_issues = result.get("processed_issues", [])
-        
+        if not processed_issues:
+            return {"status": "success", "task": "sync", "message": "No updates to sync"}
+            
         # Database sync logic here
-        # For example:
         synced_records = []
         for issue in processed_issues:
-            # Add your database sync logic
             synced_records.append({
                 "issue_key": issue.get("issue_key"),
                 "status": "synced"
@@ -80,87 +92,116 @@ def sync_database_records(self, result):
         }
     except Exception as e:
         logger.error(f"Error syncing with database: {e}")
-        raise self.retry(exc=e, countdown=60, max_retries=3)
+        return {
+            "status": "error",
+            "task": "sync",
+            "error": str(e),
+            "synced_records": []
+        }
 
 @shared_task(bind=True)
 def process_jira_updates_and_changes(self):
-    """Main task that coordinates the three subtasks for Jira processing"""
+    """Main task that coordinates the three subtasks with fault tolerance"""
     logger.info("Starting Jira updates processing workflow")
     
-    try:
-        # Method 1: Run tasks sequentially (recommended for this use case)
-        fetch_result = fetch_jira_updates.delay()
-        fetch_data = fetch_result.get(timeout=300)  # 5 minutes timeout
-        
-        process_result = process_issue_updates.delay(fetch_data)
-        process_data = process_result.get(timeout=300)
-        
-        sync_result = sync_database_records.delay(process_data)
-        sync_data = sync_result.get(timeout=300)
-        
-        # Compile final results
-        return {
-            "fetch_status": fetch_data.get("status"),
-            "process_status": process_data.get("status"),
-            "sync_status": sync_data.get("status"),
-            "total_processed": process_data.get("processed_count", 0),
-            "total_synced": sync_data.get("synced_count", 0)
-        }
-        
-        # Method 2: Run tasks in parallel (if tasks are independent)
-        # job = group([
-        #     fetch_jira_updates.s(),
-        #     process_issue_updates.s(),
-        #     sync_database_records.s()
-        # ])
-        # result = job.apply_async()
-        # return result.get()
-        
-    except Exception as e:
-        logger.error(f"Error in main Jira processing task: {e}")
-        raise self.retry(exc=e, countdown=60, max_retries=3)
-
-# Schedule configuration in celeryconfig.py:
-# from celery.schedules import crontab
-#
-# beat_schedule = {
-#     'process-jira-updates': {
-#         'task': 'your_module.process_jira_updates_and_changes',
-#         'schedule': crontab(hour='*/4'),  # Runs every 4 hours
-#     }
-# }
-```
-
-Key features of this implementation:
-
-1. Three distinct subtasks:
-   - `fetch_jira_updates`: Gets updated issues from Jira
-   - `process_issue_updates`: Processes the fetched updates
-   - `sync_database_records`: Syncs processed data with database
-
-2. Error handling and retry logic for each task
-
-3. Comprehensive logging
-
-4. Sequential processing to ensure data consistency
-
-5. Result tracking and compilation
-
-You can also add monitoring and metrics:
-
-```python
-from celery import shared_task
-from prometheus_client import Counter, Gauge  # if using Prometheus
-
-# Metrics
-jira_updates_processed = Counter('jira_updates_processed_total', 'Total number of Jira updates processed')
-jira_processing_duration = Gauge('jira_processing_duration_seconds', 'Time taken to process Jira updates')
-
-@shared_task(bind=True)
-def process_jira_updates_and_changes(self):
-    """Main task with metrics"""
-    import time
-    start_time = time.time()
+    results = {
+        "fetch": None,
+        "process": None,
+        "sync": None
+    }
     
     try:
-        #
+        # Run fetch task
+        fetch_result = fetch_jira_updates.delay()
+        results["fetch"] = fetch_result.get(timeout=300)
+        
+        # Run process task regardless of fetch result
+        process_result = process_issue_updates.delay(results["fetch"])
+        results["process"] = process_result.get(timeout=300)
+        
+        # Run sync task regardless of process result
+        sync_result = sync_database_records.delay(results["process"])
+        results["sync"] = sync_result.get(timeout=300)
+        
+        # Compile final results
+        summary = {
+            "overall_status": "success" if all(r.get("status") == "success" for r in results.values()) else "partial_failure",
+            "task_statuses": {
+                "fetch": results["fetch"].get("status"),
+                "process": results["process"].get("status"),
+                "sync": results["sync"].get("status")
+            },
+            "errors": {
+                task: result.get("error")
+                for task, result in results.items()
+                if result and result.get("status") == "error"
+            },
+            "metrics": {
+                "processed_count": results["process"].get("processed_count", 0),
+                "synced_count": results["sync"].get("synced_count", 0)
+            }
+        }
+        
+        # Log the summary
+        if summary["overall_status"] == "partial_failure":
+            logger.warning(f"Jira processing completed with some failures: {summary['errors']}")
+        else:
+            logger.info(f"Jira processing completed successfully: {summary['metrics']}")
+            
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Critical error in main Jira processing task: {e}")
+        return {
+            "overall_status": "critical_failure",
+            "error": str(e),
+            "task_statuses": results
+        }
+```
+
+Key improvements in this version:
+
+1. Each subtask returns a result object with status instead of raising exceptions
+2. Tasks continue executing even if previous tasks failed
+3. Each task handles its own errors and returns meaningful error information
+4. The main task compiles a comprehensive summary of all task results
+5. Proper error logging at each stage
+6. Clear distinction between different types of failures:
+   - Individual task failures
+   - Partial workflow failures
+   - Critical failures in the main task
+
+You could also add alerting for different types of failures:
+
+```python
+@shared_task(bind=True)
+def process_jira_updates_and_changes(self):
+    try:
+        # ... existing code ...
+        
+        # Alert on failures
+        if summary["overall_status"] != "success":
+            alert_level = "CRITICAL" if summary["overall_status"] == "critical_failure" else "WARNING"
+            alert_message = f"Jira processing {summary['overall_status']}: {summary['errors']}"
+            
+            # Send alert (implement your alerting mechanism)
+            send_alert(level=alert_level, message=alert_message)
+            
+        return summary
+        
+    except Exception as e:
+        error_msg = f"Critical error in main Jira processing task: {e}"
+        send_alert(level="CRITICAL", message=error_msg)
+        logger.error(error_msg)
+        return {
+            "overall_status": "critical_failure",
+            "error": str(e),
+            "task_statuses": results
+        }
+```
+
+This approach ensures that:
+1. All tasks get a chance to run
+2. Failures are properly tracked and reported
+3. The system maintains a record of what succeeded and what failed
+4. You have detailed information for debugging issues

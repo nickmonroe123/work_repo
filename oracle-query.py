@@ -1,75 +1,50 @@
-I'll help you make an API request using a certificate (.cer) and private key (.pfx) file in Python. First, we'll need to use the `requests` library along with SSL context.
-
-Here's a code example:
-
-```python
 import requests
-from OpenSSL import crypto
-from cryptography.hazmat.primitives import serialization
-import ssl
 
-def make_api_request(cert_path, pfx_path, pfx_password, api_url):
-    # Load the PFX file
-    with open(pfx_path, 'rb') as pfx_file:
-        pfx_data = pfx_file.read()
-        
-    # Load the certificate from PFX
-    p12 = crypto.load_pkcs12(pfx_data, pfx_password)
-    
-    # Create a session
-    session = requests.Session()
-    
-    # Configure the session with the certificate and private key
-    session.cert = (cert_path, pfx_path)
-    
-    # Make the API request
-    try:
-        response = session.get(api_url, verify=True)
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response
-    except requests.exceptions.RequestException as e:
-        print(f"Error making request: {e}")
-        return None
+class SpectrumCoreAuth:
+    def __init__(self, cert_path: str, key_path: str):
+        self.cert_path = cert_path
+        self.key_path = key_path
+        self.cert = (self.cert_path, self.key_path)
 
-# Example usage
-api_url = "https://your-api-endpoint.com"
-cert_path = "path/to/your/certificate.cer"
-pfx_path = "path/to/your/key.pfx"
-pfx_password = "your_pfx_password"  # If your PFX file is password protected
 
-response = make_api_request(cert_path, pfx_path, pfx_password, api_url)
+CERT_FILE = "server.crt"
+KEY_FILE = "key.pem"
+cert_auth = SpectrumCoreAuth(CERT_FILE, KEY_FILE)
 
-if response:
-    print("Status Code:", response.status_code)
-    print("Response:", response.text)
-```
+system_id = "ComplianceService"
+url = "https://spectrumcore.charter.com:7443/spectrum-core/services/account/ept/getSpcAccountDivisionV1x1"
 
-A few important notes:
-1. Make sure you have the required libraries installed:
-   ```bash
-   pip install requests pyOpenSSL cryptography
-   ```
+"""/spectrum-core/services/account/ept/getSpcAccountDivisionV1x1
+Type of Possible Requests: Post
+Determines the divisionID, unique account ID and other account information\
+"""
 
-2. If your PFX file doesn't have a password, you can pass an empty string (`''`) as the `pfx_password`.
-
-3. You can modify the request method (GET, POST, etc.) and add headers or data as needed:
-```python
-# For a POST request with data
-response = session.post(
-    api_url,
-    headers={
-        'Content-Type': 'application/json',
-        # Add other headers as needed
-    },
-    json={
-        # Your request data here
+# Set up the api call itself, only using phone number here
+payload = {
+    "getSpcAccountDivisionRequest": {
+        "systemID": system_id,
+        "telephoneNumber": "9809149590"
     }
-)
-```
+}
+request_kwargs = {
+    "method": "POST",
+    "url": url,
+    "json": payload,
+    "verify": True  # Verify SSL cert from server
+}
 
-4. If the API server uses a self-signed certificate, you might need to disable SSL verification (though this isn't recommended for production):
-```python
-response = session.get(api_url, verify=False)
-```
+# Add certificate auth if provided
+if cert_auth:
+    request_kwargs["cert"] = cert_auth.cert
 
-Would you like me to modify this code for your specific API endpoint or add any particular features you need?
+# Make the post request call out to spectrum core services
+response = requests.request(**request_kwargs)
+
+# Will return an HTTPError object if an error has occurred during the process
+response.raise_for_status()
+# For now if it fails return empty list. Its possible there are just no records here
+try:
+    print("Results:")
+    print(response.json()['getSpcAccountDivisionResponse']['spcAccountDivisionList'])
+except Exception as e:
+    print(f"Phone search found 0 matches, or the format of the JSON has been changed: {e}")

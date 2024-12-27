@@ -1,207 +1,139 @@
-Yes, if you run the tasks sequentially and the first one fails, it will break the chain and the subsequent tasks won't execute. Let me modify the code to handle failures more gracefully:
+{'expand': 'schema,names', 'startAt': 0, 'maxResults': 2, 'total': 5, 'issues': [{'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12687855', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12687855', 'key': 'DPCP-2879', 'fields': {'issuetype': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issuetype/6', 'id': '6', 'description': 'Created by Jira Software - do not edit or delete. Issue type for a big user story that needs to be broken down.', 'iconUrl': 'https://jira-uat.corp.chartercom.com/secure/viewavatar?size=xsmall&avatarId=17107&avatarType=issuetype', 'name': 'Epic', 'subtask': False, 'avatarId': 17107}, 'resolutiondate': None, 'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12687167', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12687167', 'key': 'DPCP-2878', 'fields': {'issuetype': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issuetype/6', 'id': '6', 'description': 'Created by Jira Software - do not edit or delete. Issue type for a big user story that needs to be broken down.', 'iconUrl': 'https://jira-uat.corp.chartercom.com/secure/viewavatar?size=xsmall&avatarId=17107&avatarType=issuetype', 'name': 'Epic', 'subtask': False, 'avatarId': 17107}, 'resolutiondate': None, 'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.ey': 'new', 'colorName': 'default', 'name': 'To Do'}}}}]}: 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'k
 
-```python
-from celery import shared_task
-from celery.utils.log import get_task_logger
-import services
+{'expand': 'schema,names', 'startAt': 0, 'maxResults': 2, 'total': 4, 'issues': [{'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12688458', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12688458', 'key': 'DPCP-2884', 'fields': {'issuetype': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issuetype/7', 'id': '7', 'description': 'Created by Jira Software - do not edit or delete. Issue type for a user story.', 'iconUrl': 'https://jira-uat.corp.chartercom.com/secure/viewavatar?size=xsmall&avatarId=17115&avatarType=issuetype', 'name': 'Story', 'subtask': False, 'avatarId': 17115}, 'resolutiondate': None, 'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12687856', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12687856', 'key': 'DPCP-2880', 'fields': {'issuetype': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issuetype/7', 'id': '7', 'description': 'Created by Jira Software - do not edit or delete. Issue type for a user story.', 'iconUrl': 'https://jira-uat.corp.chartercom.com/secure/viewavatar?size=xsmall&avatarId=17115&avatarType=issuetype', 'name': 'Story', 'subtask': False, 'avatarId': 17115}, 'resolutiondate': None, 'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/10537', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'New', 'id': '10537', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/2', 'id': 2, 'key': 'new', 'colorName': 'default', 'name': 'To Do'}}}}]}
 
-logger = get_task_logger(__name__)
+{'expand': 'schema,names', 'startAt': 0, 'maxResults': 2, 'total': 67, 'issues': [{'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12687170', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12687170', 'key': 'DPCP-2882', 'fields': {'issuetype': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issuetype/72503', 'id': '72503', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/secure/viewavatar?size=xsmall&avatarId=17100&avatarType=issuetype', 'name': 'Change Ticket', 'subtask': False, 'avatarId': 17100}, 'customfield_16748': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/customFieldOption/3007660', 'value': 'Change Valid', 'id': '3007660', 'disabled': False}, 'resolutiondate': '2024-12-17T15:56:52.000-0500', 'status': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/status/12438', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'Completed', 'id': '12438', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/3', 'id': 3, 'key': 'done', 'colorName': 'success', 'name': 'Done'}}}}, {'expand': 'operations,versionedRepresentations,editmeta,changelog,renderedFields', 'id': '12687169', 'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issue/12687169', 'key': 'DPCP-2881', 'fields': {'issuetype': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/issuetype/72503', 'id': '72503', 'description': '', 'iconUrl': 'https://jira-uat.corp.chartercom.com/secure/viewavatar?size=xsmall&avatarId=17100&avatarType=issuetype', 'name': 'Change Ticket', 'subtask': False, 'avatarId': 17100}, 'customfield_16748': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/customFieldOption/3007660', 'value': 'Change Valid',https://jira-uat.corp.chartercom.com/images/icons/statuses/generic.png', 'name': 'Completed', 'id': '12438', 'statusCategory': {'self': 'https://jira-uat.corp.chartercom.com/rest/api/2/statuscategory/3', 'id': 3, 'key': 'done', 'colorName': 'success', 'name': 'Done'}}}}]}
 
-@shared_task(bind=True)
-def fetch_jira_updates(self):
-    """Subtask 1: Fetches updated issues from Jira"""
-    logger.info("Starting to fetch Jira updates")
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+class JiraClient:
+    """Class to abstract common API calls to Jira."""
+
+    def __init__(self, base_url: str = None) -> None:
+        self.session = JiraSession(base_url)
+
+    def get_issue(self, issue_id: str) -> dict:
+        """Gets the API response for the given issue.
+
+        Args:
+            issue_id (str): The id for the issue
+
+        Returns:
+            dict: The API response
+        """
+
+        return self.session.get(f'/rest/api/2/issue/{issue_id}')
+
+    def create_issue(self, payload: dict) -> dict:
+        """Creates an issue with the given JSON payload.
+
+        Args:
+            payload (dict): The payload with the parameters for the issue
+
+        Returns:
+            dict: The API response
+        """
+        return self.session.post('/rest/api/2/issue', json=payload)
+
+    def bulk_create_issues(self, payloads: list[dict]) -> dict:
+        """Bulk creates issues from a list of dictionaries.
+
+        Args:
+            payloads (dict): The list of issues (in dict form) to be created
+
+        Returns:
+            dict: The API response
+        """
+        return self.session.post(
+            '/rest/api/2/issue/bulk', json={'issueUpdates': payloads}
+        )
+
+    def close_issue(self, jira_id: str, close_code: str = None) -> dict:
+        """Closes the given Jira ticket. Jira uses a transistion to update the status.
+        More information is doucumented: https://docs.atlassian.com/software/jira/docs/api/REST/7.6.1/#api/2/issue-doTransition
+
+        Args:
+            jira_id (str): The target jira id
+            close_code (str, optional): Task tickets require the close code to be provided. Defaults to None.
+
+        Returns:
+            dict: The API response
+        """
+        payload = {
+            'transition': {'id': constants.CLOSE_TRANSITION_ID},
+        }
+        if close_code is not None:
+            payload['fields'] = {constants.CLOSE_CODE: {'value': close_code}}
+        return self.session.post(
+            f'/rest/api/2/issue/{jira_id}/transitions', json=payload
+        )
+
+    def search_issues(self, jql: str, fields: str, max_results: int = 2, start_at: int = 0):
+        """Search for issues using JQL."""
+        params = {
+            'jql': jql,
+            'maxResults': max_results,
+            'startAt': start_at,
+            'fields': fields
+        }
+        return self.session.get('/rest/api/2/search', params=params).json()
+
+
+def get_jira_updated_issues(jql: str, fields: str):
+    # Initialize client
+    client = JiraClient()
+
     try:
-        updated_issues = services.get_jira_updated_issues()
-        return {
-            "status": "success",
-            "task": "fetch",
-            "updated_issues": updated_issues
-        }
-    except Exception as e:
-        logger.error(f"Error fetching Jira updates: {e}")
-        return {
-            "status": "error",
-            "task": "fetch",
-            "error": str(e),
-            "updated_issues": []  # Return empty list on failure
-        }
+        # Retrieve all the epics in the given time range
+        jql_results = client.search_issues(jql, fields)
+        print(jql_results)
+        print("\n")
+        # TODO: Parse down the data (make model/struct)
+        # jql_parsed = parsers.extract_values(jql_results)
+        # TODO: Create the records (issue, epic, task)
 
-@shared_task(bind=True)
-def process_issue_updates(self, result):
-    """Subtask 2: Processes issue updates"""
-    logger.info("Processing Jira issue updates")
-    try:
-        if result.get("status") == "error":
-            logger.warning(f"Previous task failed: {result.get('error')}")
-            return result  # Pass through the error status
-            
-        updated_issues = result.get("updated_issues", [])
-        if not updated_issues:
-            return {"status": "success", "task": "process", "message": "No updates to process"}
-            
-        # Process updates logic here
-        processed_updates = []
-        for issue in updated_issues:
-            processed_updates.append({
-                "issue_key": issue.get("key"),
-                "status": "processed"
-            })
-            
-        return {
-            "status": "success",
-            "task": "process",
-            "processed_count": len(processed_updates),
-            "processed_issues": processed_updates
-        }
-    except Exception as e:
-        logger.error(f"Error processing updates: {e}")
-        return {
-            "status": "error",
-            "task": "process",
-            "error": str(e),
-            "processed_issues": []
-        }
+        # update: jira id, close date, close code, status
+        # for record in jql_parsed:
+        #     print(record)
 
-@shared_task(bind=True)
-def sync_database_records(self, result):
-    """Subtask 3: Syncs processed updates with database"""
-    logger.info("Syncing processed updates with database")
-    try:
-        if result.get("status") == "error":
-            logger.warning(f"Previous task failed: {result.get('error')}")
-            return result  # Pass through the error status
-            
-        processed_issues = result.get("processed_issues", [])
-        if not processed_issues:
-            return {"status": "success", "task": "sync", "message": "No updates to sync"}
-            
-        # Database sync logic here
-        synced_records = []
-        for issue in processed_issues:
-            synced_records.append({
-                "issue_key": issue.get("issue_key"),
-                "status": "synced"
-            })
-            
-        return {
-            "status": "success",
-            "task": "sync",
-            "synced_count": len(synced_records),
-            "synced_records": synced_records
-        }
-    except Exception as e:
-        logger.error(f"Error syncing with database: {e}")
-        return {
-            "status": "error",
-            "task": "sync",
-            "error": str(e),
-            "synced_records": []
-        }
-
-@shared_task(bind=True)
-def process_jira_updates_and_changes(self):
-    """Main task that coordinates the three subtasks with fault tolerance"""
-    logger.info("Starting Jira updates processing workflow")
-    
-    results = {
-        "fetch": None,
-        "process": None,
-        "sync": None
-    }
-    
-    try:
-        # Run fetch task
-        fetch_result = fetch_jira_updates.delay()
-        results["fetch"] = fetch_result.get(timeout=300)
-        
-        # Run process task regardless of fetch result
-        process_result = process_issue_updates.delay(results["fetch"])
-        results["process"] = process_result.get(timeout=300)
-        
-        # Run sync task regardless of process result
-        sync_result = sync_database_records.delay(results["process"])
-        results["sync"] = sync_result.get(timeout=300)
-        
-        # Compile final results
-        summary = {
-            "overall_status": "success" if all(r.get("status") == "success" for r in results.values()) else "partial_failure",
-            "task_statuses": {
-                "fetch": results["fetch"].get("status"),
-                "process": results["process"].get("status"),
-                "sync": results["sync"].get("status")
-            },
-            "errors": {
-                task: result.get("error")
-                for task, result in results.items()
-                if result and result.get("status") == "error"
-            },
-            "metrics": {
-                "processed_count": results["process"].get("processed_count", 0),
-                "synced_count": results["sync"].get("synced_count", 0)
-            }
-        }
-        
-        # Log the summary
-        if summary["overall_status"] == "partial_failure":
-            logger.warning(f"Jira processing completed with some failures: {summary['errors']}")
+    except requests.exceptions.HTTPError as e:
+        print(f"Error occurred: {e}")
+        if '401' in str(e):
+            print("Authentication failed. Please check your access token.")
+        elif '403' in str(e):
+            print("Permission denied. Please check your access permissions.")
         else:
-            logger.info(f"Jira processing completed successfully: {summary['metrics']}")
-            
-        return summary
-        
-    except Exception as e:
-        logger.error(f"Critical error in main Jira processing task: {e}")
-        return {
-            "overall_status": "critical_failure",
-            "error": str(e),
-            "task_statuses": results
-        }
-```
+            print("An unexpected error occurred.")
 
-Key improvements in this version:
+from django.db import models
+from utilities.models import TrackedMixin
 
-1. Each subtask returns a result object with status instead of raising exceptions
-2. Tasks continue executing even if previous tasks failed
-3. Each task handles its own errors and returns meaningful error information
-4. The main task compiles a comprehensive summary of all task results
-5. Proper error logging at each stage
-6. Clear distinction between different types of failures:
-   - Individual task failures
-   - Partial workflow failures
-   - Critical failures in the main task
 
-You could also add alerting for different types of failures:
+# Base Abstract Model
+class Issue(TrackedMixin):
+    id = models.CharField(primary_key=True, max_length=100)
+    status = models.CharField(max_length=50)
+    issue_type = models.CharField(max_length=50)
+    close_date = models.DateTimeField(null=True, blank=True)
 
-```python
-@shared_task(bind=True)
-def process_jira_updates_and_changes(self):
-    try:
-        # ... existing code ...
-        
-        # Alert on failures
-        if summary["overall_status"] != "success":
-            alert_level = "CRITICAL" if summary["overall_status"] == "critical_failure" else "WARNING"
-            alert_message = f"Jira processing {summary['overall_status']}: {summary['errors']}"
-            
-            # Send alert (implement your alerting mechanism)
-            send_alert(level=alert_level, message=alert_message)
-            
-        return summary
-        
-    except Exception as e:
-        error_msg = f"Critical error in main Jira processing task: {e}"
-        send_alert(level="CRITICAL", message=error_msg)
-        logger.error(error_msg)
-        return {
-            "overall_status": "critical_failure",
-            "error": str(e),
-            "task_statuses": results
-        }
-```
+    class Meta:
+        abstract = True
 
-This approach ensures that:
-1. All tasks get a chance to run
-2. Failures are properly tracked and reported
-3. The system maintains a record of what succeeded and what failed
-4. You have detailed information for debugging issues
+
+# Concrete Models
+class Epic(Issue):
+    """Base Epic Model."""
+
+
+class Story(Issue):
+    """Story level items."""
+
+    parent = models.ForeignKey(Epic, on_delete=models.CASCADE, related_name='stories')
+
+
+class Task(Issue):
+    """Task level items."""
+
+    parent = models.ForeignKey(Story, on_delete=models.CASCADE, related_name='tasks')
+    business_unit = models.CharField(max_length=100)
+    close_code = models.CharField(max_length=100, null=True, blank=True)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             

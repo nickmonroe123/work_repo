@@ -7,6 +7,11 @@ from jira_integration import constants
 class JiraParser:
     """Base class for parsing Jira issues."""
     
+    @classmethod
+    def get_issue_type(cls) -> str:
+        """Abstract method to return the issue type this parser handles."""
+        raise NotImplementedError("Subclasses must implement get_issue_type method")
+    
     def __init__(self, data: Dict):
         self.data = data
 
@@ -37,6 +42,10 @@ class JiraParser:
 
 class EpicParser(JiraParser):
     """Parser for Epic type Jira issues."""
+    
+    @classmethod
+    def get_issue_type(cls) -> str:
+        return 'Epic'
 
     def parse(self) -> Dict:
         """Parse epic issues from Jira response."""
@@ -56,6 +65,10 @@ class EpicParser(JiraParser):
 
 class StoryParser(JiraParser):
     """Parser for Story type Jira issues."""
+    
+    @classmethod
+    def get_issue_type(cls) -> str:
+        return 'Story'
 
     def parse(self) -> Dict:
         """Parse story issues from Jira response."""
@@ -89,6 +102,10 @@ class StoryParser(JiraParser):
 
 class TaskParser(JiraParser):
     """Parser for Task type Jira issues."""
+    
+    @classmethod
+    def get_issue_type(cls) -> str:
+        return 'Change Ticket'
 
     def parse(self) -> Dict:
         """Parse task issues from Jira response."""
@@ -168,9 +185,11 @@ def create_or_update_records(jira_json: Dict, jira_type: str):
     if not parser_class:
         raise ValueError(f"Unknown jira_type: {jira_type}")
 
+    expected_type = parser_class.get_issue_type()
+
     with transaction.atomic():
         for issue in jira_json.get('issues', []):
-            if issue['fields']['issuetype']['name'] == parser_class.get_issue_type():
+            if issue['fields']['issuetype']['name'] == expected_type:
                 parser = parser_class(issue)
                 parsed_data = parser.parse()
                 parser.create_or_update(parsed_data)

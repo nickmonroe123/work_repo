@@ -1,32 +1,9 @@
-from typing import Dict, List, Optional
-from datetime import datetime
-from django.utils.timezone import make_aware
+from typing import Dict, List
+from django.utils.dateparse import parse_datetime
+from .models import Epic, Story, Task
+from jira_integration import constants
 
 class JiraParser:
-    # Common Jira custom field names (may need to be updated for your instance)
-    EPIC_LINK_FIELD = 'customfield_10014'  # You might need to update this field name
-    
-    @classmethod
-    def get_epic_link_field(cls, issue: Dict) -> Optional[str]:
-        """
-        Get the Epic link from an issue. Try different common field names.
-        Returns None if no Epic link is found.
-        """
-        fields = issue['fields']
-        # Try the standard Epic Link field
-        if cls.EPIC_LINK_FIELD in fields:
-            return fields[cls.EPIC_LINK_FIELD]
-        
-        # Try looking for a field that contains 'Epic Link' in its name
-        for field_name, value in fields.items():
-            if field_name.startswith('customfield_') and value:
-                try:
-                    if issue['fields'][field_name]:
-                        return value
-                except (KeyError, TypeError):
-                    continue
-        return None
-
     @staticmethod
     def parse_common_fields(issue: Dict) -> Dict:
         """Extract common fields from a Jira issue."""
@@ -35,7 +12,7 @@ class JiraParser:
             'id': issue['key'],
             'status': fields['status']['name'],
             'issue_type': fields['issuetype']['name'],
-            'close_date': make_aware(datetime.strptime(fields['resolutiondate'], '%Y-%m-%dT%H:%M:%S.%f%z')) 
+            'close_date': parse_datetime(fields['resolutiondate']).date()
                          if fields.get('resolutiondate') else None
         }
 
@@ -56,10 +33,7 @@ class JiraParser:
         for issue in jira_response.get('issues', []):
             if issue['fields']['issuetype']['name'] == 'Story':
                 story_data = JiraParser.parse_common_fields(issue)
-                # Get the parent epic key if it exists
-                epic_link = JiraParser.get_epic_link_field(issue)
-                if epic_link:
-                    story_data['epic_key'] = epic_link
+                story_data['parent'] = issue['fields'].get(constants.EPIC_LINK, '')
                 stories.append(story_data)
         return stories
 
@@ -72,55 +46,55 @@ class JiraParser:
                 task_data = JiraParser.parse_common_fields(issue)
                 # Add task-specific fields
                 task_data['close_code'] = (
-                    issue['fields'].get('customfield_16748', {}).get('value')
-                    if issue['fields'].get('customfield_16748') else None
+                    issue['fields'].get(constants.CLOSE_CODE, {}).get('value')
+                    if issue['fields'].get(constants.CLOSE_CODE) else None
                 )
                 tasks.append(task_data)
         return tasks
 
-def create_or_update_records(epics_json: Dict, stories_json: Dict, tasks_json: Dict):
+def create_or_update_records(jira_json: Dict, jira_type: str):
     """Create or update records in the database."""
     from django.db import transaction
-    
+
     with transaction.atomic():
         # Process epics
-        epic_records = []
-        for epic_data in JiraParser.parse_epics(epics_json):
-            epic, created = Epic.objects.update_or_create(
-                id=epic_data['id'],
-                defaults=epic_data
-            )
-            epic_records.append(epic)
+        if jira_type == "epic":
+            for epic_data in JiraParser.parse_epics(jira_json):
+                Epic.objects.update_or_create(
+                    id=epic_data['id'],
+                    defaults=epic_data
+                )
 
-        # Process stories
-        story_records = []
-        for story_data in JiraParser.parse_stories(stories_json):
-            # Remove epic_key from defaults since it's not a model field
-            epic_key = story_data.pop('epic_key', None)
-            
-            # First, try to find the parent epic
-            parent_epic = None
-            if epic_key:
-                try:
-                    parent_epic = Epic.objects.get(id=epic_key)
-                except Epic.DoesNotExist:
-                    print(f"Warning: Parent Epic {epic_key} not found for Story {story_data['id']}")
-            
-            # Create or update the story
-            story, created = Story.objects.update_or_create(
-                id=story_data['id'],
-                defaults={**story_data, 'parent': parent_epic} if parent_epic else story_data
-            )
-            story_records.append(story)
+        elif jira_type == "story":
+            # Process stories
+            for story_data in JiraParser.parse_stories(jira_json):
+                # Remove epic_key from defaults since it's not a model field
+                epic_key = story_data.pop('parent', None)
 
-        # Process tasks
-        task_records = []
-        for task_data in JiraParser.parse_tasks(tasks_json):
-            # You might need to add logic here to determine the parent story
-            task, created = Task.objects.update_or_create(
-                id=task_data['id'],
-                defaults=task_data
-            )
-            task_records.append(task)
+                # First, try to find the parent epic
+                parent_epic = None
+                if epic_key:
+                    try:
+                        parent_epic = Epic.objects.get(id=epic_key)
+                    except Epic.DoesNotExist:
+                        print(f"Warning: Parent Epic {epic_key} not found for Story {story_data['id']}")
 
-    return epic_records, story_records, task_records
+                # Create or update the story
+                Story.objects.update_or_create(
+                    id=story_data['id'],
+                    defaults={**story_data, 'parent': parent_epic} if parent_epic else story_data
+                )
+
+        elif jira_type == "task":
+            print("HI")
+            # Process tasks
+            for task_data in JiraParser.parse_tasks(jira_json):
+                Task.objects.update_or_create(
+                    id=task_data['id'],
+                    defaults=task_data
+                )
+
+    return
+
+Can you turn this into a 4 class based system. Jira parser, epic parser, story parser, and task parser and split out the three if statemtns and parsing functions into their own respecitvie class!
+create_or_update_records has all three type go through it still. just cleaner

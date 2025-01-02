@@ -1,3 +1,5 @@
+# services.py
+
 def get_jira_updated_issues(jql: str, fields: str, jira_type: str):
     # Initialize client
     client = JiraClient()
@@ -9,12 +11,13 @@ def get_jira_updated_issues(jql: str, fields: str, jira_type: str):
 
     except requests.exceptions.HTTPError as e:
         logger.error(f"Error occurred: {e}")
-        if '401' in str(e):
-            logger.error("Authentication failed. Please check your access token.")
-        elif '403' in str(e):
-            logger.error("Permission denied. Please check your access permissions.")
+        if hasattr(e.response, 'status_code'):
+            if e.response.status_code == 401:
+                logger.error("Authentication failed. Please check your access token.")
+            elif e.response.status_code == 403:
+                logger.error("Permission denied. Please check your access permissions.")
+            else:
+                logger.error("An unexpected error occurred when getting jira updated issues.")
         else:
             logger.error("An unexpected error occurred when getting jira updated issues.")
         raise
-
-they are both still failing. is there a better way to do error catching here to fix that?

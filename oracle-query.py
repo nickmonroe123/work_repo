@@ -1,173 +1,292 @@
-from typing import Dict, List, Optional
+# tasks.py
+from celery import shared_task
+from celery.utils.log import get_task_logger
+from django.conf import settings
+from . import services
+from jira_integration import constants
+from celery.exceptions import MaxRetriesExceededError
+
+logger = get_task_logger(__name__)
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3, 'countdown': 60},
+    acks_late=True
+)
+def fetch_jira_epic_updates():
+    """Fetches updated issues from Jira"""
+    try:
+        logger.info("Starting epic updates fetch")
+        services.get_jira_updated_issues(
+            jql=constants.EPIC_JQL,
+            fields=constants.EPIC_FIELDS,
+            jira_type='epic'
+        )
+        logger.info("Completed epic updates fetch")
+    except Exception as e:
+        logger.error(f"Error in fetch_jira_epic_updates: {str(e)}", exc_info=True)
+        raise
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3, 'countdown': 60},
+    acks_late=True
+)
+def fetch_jira_story_updates():
+    """Fetches updated stories from Jira"""
+    try:
+        logger.info("Starting story updates fetch")
+        services.get_jira_updated_issues(
+            jql=constants.STORY_JQL,
+            fields=constants.STORY_FIELDS,
+            jira_type='story'
+        )
+        logger.info("Completed story updates fetch")
+    except Exception as e:
+        logger.error(f"Error in fetch_jira_story_updates: {str(e)}", exc_info=True)
+        raise
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={'max_retries': 3, 'countdown': 60},
+    acks_late=True
+)
+def fetch_jira_task_updates():
+    """Fetches updated tasks from Jira"""
+    try:
+        logger.info("Starting task updates fetch")
+        services.get_jira_updated_issues(
+            jql=constants.TASK_JQL,
+            fields=constants.TASK_FIELDS,
+            jira_type='task'
+        )
+        logger.info("Completed task updates fetch")
+    except Exception as e:
+        logger.error(f"Error in fetch_jira_task_updates: {str(e)}", exc_info=True)
+        raise
+
+@shared_task(bind=True)
+def process_jira_updates_and_changes():
+    """
+    Orchestrator task that manages the fetching and processing of Jira updates.
+    Uses chord to ensure all fetch tasks complete before proceeding.
+    """
+    try:
+        logger.info("Starting Jira updates process")
+        
+        # Create a group of tasks to run in parallel
+        fetch_tasks = [
+            fetch_jira_epic_updates.s(),
+            fetch_jira_story_updates.s(),
+            fetch_jira_task_updates.s()
+        ]
+        
+        # Use chord to run tasks in parallel and ensure all complete
+        from celery import chord
+        chord(fetch_tasks)(process_completion.s())
+        
+    except Exception as e:
+        logger.error(f"Error in process_jira_updates_and_changes: {str(e)}", exc_info=True)
+        raise
+
+@shared_task
+def process_completion(results):
+    """Callback task that runs after all fetch tasks complete"""
+    logger.info("All Jira fetch tasks completed successfully")
+    return results
+
+# services.py
+from typing import Dict, Optional
+import requests
+from requests.exceptions import RequestException
+from django.conf import settings
+from celery.utils.log import get_task_logger
+from jira_integration.session import JiraSession
+from jira_integration import constants
+from jira_integration.parsers import create_or_update_records
+from dataclasses import dataclass
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+logger = get_task_logger(__name__)
+
+@dataclass
+class JiraResponse:
+    """Data class to handle Jira API responses"""
+    success: bool
+    data: Optional[Dict] = None
+    error: Optional[str] = None
+    status_code: Optional[int] = None
+
+class JiraClientError(Exception):
+    """Base exception for JiraClient errors"""
+    pass
+
+class JiraAuthenticationError(JiraClientError):
+    """Raised when authentication fails"""
+    pass
+
+class JiraPermissionError(JiraClientError):
+    """Raised when permission is denied"""
+    pass
+
+class JiraClient:
+    """Class to abstract common API calls to Jira."""
+
+    def __init__(self, base_url: str = None) -> None:
+        self.session = JiraSession()
+        self.logger = get_task_logger(__name__)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        reraise=True
+    )
+    def search_issues(
+        self,
+        jql: str,
+        fields: str,
+        max_results: int = constants.MAX_JQL_RESULTS,
+        start_at: int = 0
+    ) -> JiraResponse:
+        """
+        Search for issues using JQL with retry logic and proper error handling.
+        """
+        try:
+            params = {
+                'jql': jql,
+                'maxResults': max_results,
+                'startAt': start_at,
+                'fields': fields
+            }
+            
+            self.logger.debug(f"Searching Jira issues with params: {params}")
+            response = self.session.get('/rest/api/2/search', params=params)
+            response.raise_for_status()
+            
+            return JiraResponse(
+                success=True,
+                data=response.json(),
+                status_code=response.status_code
+            )
+
+        except requests.exceptions.HTTPError as e:
+            error_msg = f"HTTP error occurred: {str(e)}"
+            self.logger.error(error_msg)
+            
+            if e.response.status_code == 401:
+                raise JiraAuthenticationError("Authentication failed")
+            elif e.response.status_code == 403:
+                raise JiraPermissionError("Permission denied")
+            
+            return JiraResponse(
+                success=False,
+                error=error_msg,
+                status_code=e.response.status_code
+            )
+            
+        except RequestException as e:
+            error_msg = f"Network error occurred: {str(e)}"
+            self.logger.error(error_msg)
+            return JiraResponse(success=False, error=error_msg)
+            
+        except Exception as e:
+            error_msg = f"Unexpected error occurred: {str(e)}"
+            self.logger.error(error_msg)
+            return JiraResponse(success=False, error=error_msg)
+
+def get_jira_updated_issues(jql: str, fields: str, jira_type: str):
+    """
+    Retrieve and process updated Jira issues with improved error handling and pagination.
+    """
+    client = JiraClient()
+    logger.info(f"Starting to fetch {jira_type} issues")
+    
+    try:
+        start_at = 0
+        total = None
+        processed_count = 0
+        
+        while total is None or start_at < total:
+            response = client.search_issues(jql, fields, start_at=start_at)
+            
+            if not response.success:
+                logger.error(f"Failed to fetch {jira_type} issues: {response.error}")
+                raise JiraClientError(response.error)
+            
+            if total is None:
+                total = response.data['total']
+                logger.info(f"Total {jira_type} issues to process: {total}")
+            
+            create_or_update_records(response.data, jira_type)
+            
+            processed_count += len(response.data['issues'])
+            start_at += constants.MAX_JQL_RESULTS
+            
+            logger.info(f"Processed {processed_count}/{total} {jira_type} issues")
+            
+    except (JiraAuthenticationError, JiraPermissionError) as e:
+        logger.error(f"Authentication/Permission error: {str(e)}")
+        raise
+        
+    except Exception as e:
+        logger.error(f"Error processing {jira_type} issues: {str(e)}", exc_info=True)
+        raise
+    
+    logger.info(f"Successfully completed processing {jira_type} issues")
+
+# parsers.py improvements
+
+from typing import Dict, List, Optional, Tuple
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
-from .models import Epic, Story, Task, Issue
-from jira_integration import constants
+from django.core.exceptions import ValidationError
+from .models import Epic, Story, Task
+import logging
 
+logger = logging.getLogger(__name__)
+
+class ParserError(Exception):
+    """Base exception for parser errors"""
+    pass
+
+class ValidationParserError(ParserError):
+    """Raised when validation fails during parsing"""
+    pass
 
 class JiraParser:
-    """
-    Base class for parsing Jira issues.
-    custom JQL fields: https://chalk.charter.com/display/JIRAREQ/Jira+Custom+Fields
-    """
+    """Base class for parsing Jira issues with improved error handling."""
 
-    @classmethod
-    def get_issue_type(cls) -> str:
-        """Abstract method to return the issue type this parser handles."""
-        raise NotImplementedError("Subclasses must implement get_issue_type method")
-
-    def __init__(self, data: Dict):
-        self.data = data
-
-    @staticmethod
-    def parse_common_fields(issue: Dict) -> Dict:
-        """Extract common fields from a Jira issue."""
-        fields = issue['fields']
-        return {
-            'id': issue['key'],
-            'summary': fields['summary'],
-            'status': fields['status']['name'].upper().replace(' ', '_'),
-            'issue_type': fields['issuetype']['name'].upper().replace(' ', '_'),
-            'close_date': parse_datetime(fields['resolutiondate']).date()
-            if fields.get('resolutiondate') else None
-        }
-
-    def parse(self) -> Dict:
-        """Base parsing method to be extended by child classes."""
-        return self.parse_common_fields(self.data)
-
-
-class EpicParser(JiraParser):
-    """Parser for Epic type Jira issues."""
-
-    @classmethod
-    def get_issue_type(cls) -> list:
-        return ['Epic']
-
-    def parse(self) -> Dict:
-        """Parse epic issues from Jira response."""
-        return super().parse()
-
-    def create_or_update(self, epic_data: Dict):
-        """Create or update Epic records."""
-        Epic.objects.update_or_create(
-            id=epic_data['id'],
-            defaults=epic_data
-        )
-
-
-class StoryParser(JiraParser):
-    """Parser for Story type Jira issues."""
-
-    @classmethod
-    def get_issue_type(cls) -> list:
-        return ['Story']
-
-    def parse(self) -> Dict:
-        """Parse story issues from Jira response."""
-        parsed_data = super().parse()
-        parsed_data['parent'] = self.data['fields'].get(constants.EPIC_LINK, '')
-        return parsed_data
-
-    def _get_parent(self) -> Optional[str]:
-        """Get parent epic key."""
-        return self.data['fields'].get(constants.EPIC_LINK)
-
-    def create_or_update(self, story_data: Dict):
-        """Create or update Story records."""
-        # Remove epic_key from defaults since it's not a model field
-        epic_key = story_data.pop('parent', None)
-
-        # First, try to find the parent epic
-        parent_epic = None
-        if epic_key:
-            try:
-                parent_epic = Epic.objects.get(id=epic_key)
-            except Epic.DoesNotExist:
-                print(f"Warning: Parent Epic {epic_key} not found for Story {story_data['id']}")
-
-        # Create or update the story
-        Story.objects.update_or_create(
-            id=story_data['id'],
-            defaults={**story_data, 'parent': parent_epic} if parent_epic else story_data
-        )
-
-
-class TaskParser(JiraParser):
-    """Parser for Task type Jira issues."""
-
-    @classmethod
-    def get_issue_type(cls) -> list:
-        return ['Access Ticket', 'Delete Ticket', 'Appeal Ticket', 'Change Ticket']
-
-    def parse(self) -> Dict:
-        """Parse task issues from Jira response."""
-        parsed_data = super().parse()
-
-        # Add business unit from assigned group
-        parsed_data['business_unit'] = self.data['fields'][constants.ASSIGNED_GROUP]['value']
-
-        # Add close code
-        close_code = self.data['fields'].get(constants.CLOSE_CODE)
-        parsed_data['close_code'] = close_code['value'] if close_code else None
-
-        # Add parent information
-        parsed_data['parent_key'] = self._get_parent()
-
-        return parsed_data
-
-    def _get_parent(self) -> Optional[str]:
+    def parse_with_validation(self) -> Tuple[Dict, bool]:
         """
-        Get parent issue key following specific business rules:
-        1. Must be a parent-child relationship
-        2. Must be in the same project
-        3. Can only have one parent in the same project
+        Parse and validate the data, returning both the parsed data and validation status.
         """
-        # Filter parent-child relationships in the same project
-        parent_child_issue_links = [
-            d for d in self.data['fields']['issuelinks']
-            if (d['type']['inward'] == 'is child task of' and
-                'inwardIssue' in d and
-                d['inwardIssue']['key'].startswith(self.data['key'].split('-')[0]))
-        ]
+        try:
+            parsed_data = self.parse()
+            self.validate(parsed_data)
+            return parsed_data, True
+        except ValidationError as e:
+            logger.error(f"Validation error for issue {self.data.get('key')}: {str(e)}")
+            return {}, False
+        except Exception as e:
+            logger.error(f"Error parsing issue {self.data.get('key')}: {str(e)}")
+            return {}, False
 
-        num_links = len(parent_child_issue_links)
-        if num_links != 1:
-            try:
-                # Check if task already exists and has a parent
-                existing_task = Story.objects.get(id=self.data['key'])
-                if existing_task.parent:
-                    return existing_task.parent.pk
-                else:
-                    if num_links > 1:
-                        raise ValueError("Tasks cannot have multiple parents in the same project")
-                    raise ValueError("Tasks must have parents")
-            except Story.DoesNotExist:
-                # New task with no parent - allowed for initial creation
-                return None
+    def validate(self, parsed_data: Dict) -> None:
+        """
+        Validate the parsed data. Override in subclasses for specific validation rules.
+        """
+        required_fields = ['id', 'summary', 'status', 'issue_type']
+        missing_fields = [field for field in required_fields if not parsed_data.get(field)]
+        
+        if missing_fields:
+            raise ValidationError(f"Missing required fields: {', '.join(missing_fields)}")
 
-        return parent_child_issue_links[0]['inwardIssue']['key']
-
-    def create_or_update(self, task_data: Dict):
-        """Create or update Task records."""
-        parent_key = task_data.pop('parent_key', None)
-
-        # Find parent issue if parent key exists
-        parent = None
-        if parent_key:
-            try:
-                parent = Story.objects.get(id=parent_key)
-            except Story.DoesNotExist:
-                print(f"Warning: Parent Issue {parent_key} not found for Task {task_data['id']}")
-
-        Task.objects.update_or_create(
-            id=task_data['id'],
-            defaults={**task_data, 'parent': parent} if parent else task_data
-        )
-
-
+@transaction.atomic
 def create_or_update_records(jira_json: Dict, jira_type: str):
-    """Create or update records in the database."""
+    """Create or update records with improved error handling and atomic transactions."""
     parser_classes = {
         'epic': EpicParser,
         'story': StoryParser,
@@ -179,11 +298,35 @@ def create_or_update_records(jira_json: Dict, jira_type: str):
         raise ValueError(f"Unknown jira_type: {jira_type}")
 
     expected_type = parser_class.get_issue_type()
+    success_count = 0
+    error_count = 0
 
-    for issue in jira_json.get('issues', []):
-        if issue['fields']['issuetype']['name'] in expected_type:
-            parser = parser_class(issue)
-            parsed_data = parser.parse()
-            parser.create_or_update(parsed_data)
-
-    return
+    try:
+        for issue in jira_json.get('issues', []):
+            if issue['fields']['issuetype']['name'] in expected_type:
+                try:
+                    with transaction.atomic():
+                        parser = parser_class(issue)
+                        parsed_data, is_valid = parser.parse_with_validation()
+                        
+                        if is_valid:
+                            parser.create_or_update(parsed_data)
+                            success_count += 1
+                        else:
+                            error_count += 1
+                            
+                except Exception as e:
+                    error_count += 1
+                    logger.error(
+                        f"Error processing {jira_type} issue {issue.get('key')}: {str(e)}",
+                        exc_info=True
+                    )
+                    
+        logger.info(
+            f"Processed {jira_type} issues - "
+            f"Success: {success_count}, Errors: {error_count}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Fatal error processing {jira_type} issues: {str(e)}", exc_info=True)
+        raise

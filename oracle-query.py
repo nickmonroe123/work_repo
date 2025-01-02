@@ -16,3 +16,5 @@ def get_jira_updated_issues(jql: str, fields: str, jira_type: str):
         else:
             logger.error("An unexpected error occurred when getting jira updated issues.")
         raise
+
+they are both still failing. is there a better way to do error catching here to fix that?

@@ -1,23 +1,100 @@
-# services.py
+from celery import shared_task
+from celery.utils.log import get_task_logger
+from jira_integration import services
+from jira_integration import constants
 
-def get_jira_updated_issues(jql: str, fields: str, jira_type: str):
-    # Initialize client
-    client = JiraClient()
+logger = get_task_logger(__name__)
 
+class JiraUpdateError(Exception):
+    """Custom exception for Jira update process failures"""
+    pass
+
+
+@shared_task(bind=True)
+def fetch_jira_epic_updates(self):
+    """Subtask 1: Fetches updated issues from Jira"""
     try:
-        # Retrieve all the epics in the given time range
-        jql_results = client.search_issues(jql, fields)
-        create_or_update_records(jql_results, jira_type)
+        logger.info("Starting epic updates fetch")
+        services.get_jira_updated_issues(
+            jql=constants.EPIC_JQL,
+            fields=constants.EPIC_FIELDS,
+            jira_type='epic'
+        )
+        logger.info("Completed epic updates fetch")
+        return True
+    except Exception as e:
+        logger.error(f"Error in fetch_jira_epic_updates: {str(e)}")
+        raise JiraUpdateError(f"Epic update failed: {str(e)}")
 
-    except requests.exceptions.HTTPError as e:
-        logger.error(f"Error occurred: {e}")
-        if hasattr(e.response, 'status_code'):
-            if e.response.status_code == 401:
-                logger.error("Authentication failed. Please check your access token.")
-            elif e.response.status_code == 403:
-                logger.error("Permission denied. Please check your access permissions.")
-            else:
-                logger.error("An unexpected error occurred when getting jira updated issues.")
-        else:
-            logger.error("An unexpected error occurred when getting jira updated issues.")
+
+
+@shared_task(bind=True)
+def fetch_jira_story_updates(self):
+    """Subtask 2: Fetches updated stories from Jira"""
+    try:
+        logger.info("Starting story updates fetch")
+        services.get_jira_updated_issues(
+            jql=constants.STORY_JQL,
+            fields=constants.STORY_FIELDS,
+            jira_type='story'
+        )
+        logger.info("Completed story updates fetch")
+        return True
+    except Exception as e:
+        logger.error(f"Error in fetch_jira_story_updates: {str(e)}")
+        raise JiraUpdateError(f"Story update failed: {str(e)}")
+
+
+@shared_task(bind=True)
+def fetch_jira_task_updates(self):
+    """Subtask 3: Fetches updated tasks from Jira"""
+    try:
+        logger.info("Starting task updates fetch")
+        services.get_jira_updated_issues(
+            jql=constants.TASK_JQL,
+            fields=constants.TASK_FIELDS,
+            jira_type='task'
+        )
+        logger.info("Completed task updates fetch")
+        return True
+    except Exception as e:
+        logger.error(f"Error in fetch_jira_task_updates: {str(e)}")
+        raise JiraUpdateError(f"Task update failed: {str(e)}")
+
+
+@shared_task(bind=True)
+def process_jira_updates_and_changes(self):
+    """
+    Main task that processes Jira updates sequentially.
+    If any subtask fails, the entire process will fail.
+
+    Execution order:
+    1. Fetch Epics
+    2. Fetch Stories
+    3. Fetch Tasks
+    """
+    try:
+        logger.info("Starting Jira updates process")
+
+        # Step 1: Fetch Epics
+        fetch_jira_epic_updates.apply()
+
+        # Step 2: Fetch Stories
+        fetch_jira_story_updates.apply()
+
+        # Step 3: Fetch Tasks
+        fetch_jira_task_updates.apply()
+
+        logger.info("All Jira update processes completed successfully")
+        return True
+
+    except JiraUpdateError as e:
+        logger.error(f"Jira update process failed: {str(e)}")
         raise
+
+    except Exception as e:
+        logger.error(f"Unexpected error in Jira update process: {str(e)}")
+        raise
+everything is running. I just need help triggering a test case that checks against line 91-93! "except JiraUpdateError as e:
+        logger.error(f"Jira update process failed: {str(e)}")
+        raise"

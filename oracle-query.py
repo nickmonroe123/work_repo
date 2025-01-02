@@ -1,253 +1,208 @@
-# tests/test_tasks.py
-from django.test import TestCase
-from unittest.mock import Mock, patch, call
-from celery import states
-from jira_integration.tasks import (
-    JiraUpdateError,
-    fetch_jira_epic_updates,
-    fetch_jira_story_updates,
-    fetch_jira_task_updates,
-    process_jira_updates_and_changes
-)
+======================================================================
+ERROR: test_fetch_jira_epic_updates_failure (jira_integration.tests.TasksTestCase.test_fetch_jira_epic_updates_failure)
+Test epic updates fetch failure [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 56, in test_fetch_jira_epic_updates_failure
+    fetch_jira_epic_updates(self.mock_task)
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: fetch_jira_epic_updates() takes 0 positional arguments but 2 were given
 
-class TasksTestCase(TestCase):
-    """Test cases for Jira update tasks"""
+======================================================================
+ERROR: test_fetch_jira_epic_updates_success (jira_integration.tests.TasksTestCase.test_fetch_jira_epic_updates_success)
+Test successful epic updates fetch [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 33, in test_fetch_jira_epic_updates_success
+    result = fetch_jira_epic_updates(self.mock_task)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: fetch_jira_epic_updates() takes 0 positional arguments but 2 were given
 
-    def setUp(self):
-        """Set up common test dependencies"""
-        # Create a mock task instance since tasks are bound
-        self.mock_task = Mock()
-        self.mock_task.request.id = 'test-task-id'
+======================================================================
+ERROR: test_fetch_jira_story_updates_failure (jira_integration.tests.TasksTestCase.test_fetch_jira_story_updates_failure)
+Test story updates fetch failure [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 92, in test_fetch_jira_story_updates_failure
+    fetch_jira_story_updates(self.mock_task)
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: fetch_jira_story_updates() takes 0 positional arguments but 2 were given
 
-        # Create mock async result for task execution checks
-        self.mock_async_result = Mock()
-        self.mock_async_result.successful.return_value = True
+======================================================================
+ERROR: test_fetch_jira_story_updates_success (jira_integration.tests.TasksTestCase.test_fetch_jira_story_updates_success)
+Test successful story updates fetch [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 69, in test_fetch_jira_story_updates_success
+    result = fetch_jira_story_updates(self.mock_task)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: fetch_jira_story_updates() takes 0 positional arguments but 2 were given
 
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.services')
-    def test_fetch_jira_epic_updates_success(self, mock_services, mock_logger):
-        """Test successful epic updates fetch"""
-        # Act
-        result = fetch_jira_epic_updates(self.mock_task)
+======================================================================
+ERROR: test_fetch_jira_task_updates_failure (jira_integration.tests.TasksTestCase.test_fetch_jira_task_updates_failure)
+Test task updates fetch failure [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 128, in test_fetch_jira_task_updates_failure
+    fetch_jira_task_updates(self.mock_task)
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: fetch_jira_task_updates() takes 0 positional arguments but 2 were given
 
-        # Assert
-        self.assertTrue(result)
-        mock_services.get_jira_updated_issues.assert_called_once_with(
-            jql=constants.EPIC_JQL,
-            fields=constants.EPIC_FIELDS,
-            jira_type='epic'
-        )
-        mock_logger.info.assert_has_calls([
-            call("Starting epic updates fetch"),
-            call("Completed epic updates fetch")
-        ])
+======================================================================
+ERROR: test_fetch_jira_task_updates_success (jira_integration.tests.TasksTestCase.test_fetch_jira_task_updates_success)
+Test successful task updates fetch [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 105, in test_fetch_jira_task_updates_success
+    result = fetch_jira_task_updates(self.mock_task)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: fetch_jira_task_updates() takes 0 positional arguments but 2 were given
 
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.services')
-    def test_fetch_jira_epic_updates_failure(self, mock_services, mock_logger):
-        """Test epic updates fetch failure"""
-        # Arrange
-        mock_services.get_jira_updated_issues.side_effect = Exception("API Error")
+======================================================================
+ERROR: test_process_jira_updates_epic_failure (jira_integration.tests.TasksTestCase.test_process_jira_updates_epic_failure)
+Test process failure when epic update fails [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 177, in test_process_jira_updates_epic_failure
+    process_jira_updates_and_changes(self.mock_task)
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: process_jira_updates_and_changes() takes 0 positional arguments but 2 were given
 
-        # Act & Assert
-        with self.assertRaises(JiraUpdateError) as context:
-            fetch_jira_epic_updates(self.mock_task)
-        
-        self.assertIn("Epic update failed", str(context.exception))
-        self.assertIn("API Error", str(context.exception))
-        mock_logger.error.assert_called_once_with(
-            "Error in fetch_jira_epic_updates: API Error"
-        )
+======================================================================
+ERROR: test_process_jira_updates_story_failure (jira_integration.tests.TasksTestCase.test_process_jira_updates_story_failure)
+Test process failure when story update fails [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 199, in test_process_jira_updates_story_failure
+    process_jira_updates_and_changes(self.mock_task)
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: process_jira_updates_and_changes() takes 0 positional arguments but 2 were given
 
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.services')
-    def test_fetch_jira_story_updates_success(self, mock_services, mock_logger):
-        """Test successful story updates fetch"""
-        # Act
-        result = fetch_jira_story_updates(self.mock_task)
+======================================================================
+ERROR: test_process_jira_updates_success (jira_integration.tests.TasksTestCase.test_process_jira_updates_success)
+Test successful sequential processing of all updates [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 150, in test_process_jira_updates_success
+    result = process_jira_updates_and_changes(self.mock_task)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: process_jira_updates_and_changes() takes 0 positional arguments but 2 were given
 
-        # Assert
-        self.assertTrue(result)
-        mock_services.get_jira_updated_issues.assert_called_once_with(
-            jql=constants.STORY_JQL,
-            fields=constants.STORY_FIELDS,
-            jira_type='story'
-        )
-        mock_logger.info.assert_has_calls([
-            call("Starting story updates fetch"),
-            call("Completed story updates fetch")
-        ])
+======================================================================
+ERROR: test_process_jira_updates_task_failure (jira_integration.tests.TasksTestCase.test_process_jira_updates_task_failure)
+Test process failure when task update fails [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 228, in test_process_jira_updates_task_failure
+    process_jira_updates_and_changes(self.mock_task)
+  File "/usr/local/lib/python3.12/site-packages/celery/local.py", line 182, in __call__
+    return self._get_current_object()(*a, **kw)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/site-packages/celery/app/task.py", line 411, in __call__
+    return self.run(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: process_jira_updates_and_changes() takes 0 positional arguments but 2 were given
 
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.services')
-    def test_fetch_jira_story_updates_failure(self, mock_services, mock_logger):
-        """Test story updates fetch failure"""
-        # Arrange
-        mock_services.get_jira_updated_issues.side_effect = Exception("API Error")
+======================================================================
+FAIL: test_story_parser (jira_integration.tests.ParserTestCase.test_story_parser)
+Test Story parsing [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/app/src/pcs3/jira_integration/tests.py", line 352, in test_story_parser
+    self.assertEqual(result["parent"], "PROJ-123")
+AssertionError: '' != 'PROJ-123'
++ PROJ-123
 
-        # Act & Assert
-        with self.assertRaises(JiraUpdateError) as context:
-            fetch_jira_story_updates(self.mock_task)
-        
-        self.assertIn("Story update failed", str(context.exception))
-        self.assertIn("API Error", str(context.exception))
-        mock_logger.error.assert_called_once_with(
-            "Error in fetch_jira_story_updates: API Error"
-        )
 
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.services')
-    def test_fetch_jira_task_updates_success(self, mock_services, mock_logger):
-        """Test successful task updates fetch"""
-        # Act
-        result = fetch_jira_task_updates(self.mock_task)
+======================================================================
+FAIL: test_process_jira_updates_unexpected_error (jira_integration.tests.TasksTestCase.test_process_jira_updates_unexpected_error)
+Test handling of unexpected errors in the process [0.0017s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.12/unittest/mock.py", line 1395, in patched
+    return func(*newargs, **newkeywargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/app/src/pcs3/jira_integration/tests.py", line 252, in test_process_jira_updates_unexpected_error
+    self.assertIn("Unexpected error", str(context.exception))
+AssertionError: 'Unexpected error' not found in 'process_jira_updates_and_changes() takes 0 positional arguments but 2 were given'
 
-        # Assert
-        self.assertTrue(result)
-        mock_services.get_jira_updated_issues.assert_called_once_with(
-            jql=constants.TASK_JQL,
-            fields=constants.TASK_FIELDS,
-            jira_type='task'
-        )
-        mock_logger.info.assert_has_calls([
-            call("Starting task updates fetch"),
-            call("Completed task updates fetch")
-        ])
-
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.services')
-    def test_fetch_jira_task_updates_failure(self, mock_services, mock_logger):
-        """Test task updates fetch failure"""
-        # Arrange
-        mock_services.get_jira_updated_issues.side_effect = Exception("API Error")
-
-        # Act & Assert
-        with self.assertRaises(JiraUpdateError) as context:
-            fetch_jira_task_updates(self.mock_task)
-        
-        self.assertIn("Task update failed", str(context.exception))
-        self.assertIn("API Error", str(context.exception))
-        mock_logger.error.assert_called_once_with(
-            "Error in fetch_jira_task_updates: API Error"
-        )
-
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.fetch_jira_epic_updates')
-    @patch('jira_integration.tasks.fetch_jira_story_updates')
-    @patch('jira_integration.tasks.fetch_jira_task_updates')
-    def test_process_jira_updates_success(
-        self, mock_task, mock_story, mock_epic, mock_logger
-    ):
-        """Test successful sequential processing of all updates"""
-        # Arrange
-        mock_epic.apply.return_value = self.mock_async_result
-        mock_story.apply.return_value = self.mock_async_result
-        mock_task.apply.return_value = self.mock_async_result
-
-        # Act
-        result = process_jira_updates_and_changes(self.mock_task)
-
-        # Assert
-        self.assertTrue(result)
-        
-        # Verify sequential execution
-        mock_epic.apply.assert_called_once()
-        mock_story.apply.assert_called_once()
-        mock_task.apply.assert_called_once()
-        
-        # Verify completion logging
-        mock_logger.info.assert_has_calls([
-            call("Starting Jira updates process"),
-            call("All Jira update processes completed successfully")
-        ])
-
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.fetch_jira_epic_updates')
-    def test_process_jira_updates_epic_failure(self, mock_epic, mock_logger):
-        """Test process failure when epic update fails"""
-        # Arrange
-        failed_result = Mock()
-        failed_result.successful.return_value = False
-        mock_epic.apply.return_value = failed_result
-
-        # Act & Assert
-        with self.assertRaises(JiraUpdateError) as context:
-            process_jira_updates_and_changes(self.mock_task)
-        
-        self.assertIn("Epic update process failed", str(context.exception))
-        mock_logger.error.assert_called_once_with(
-            "Jira update process failed: Epic update process failed"
-        )
-
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.fetch_jira_epic_updates')
-    @patch('jira_integration.tasks.fetch_jira_story_updates')
-    def test_process_jira_updates_story_failure(
-        self, mock_story, mock_epic, mock_logger
-    ):
-        """Test process failure when story update fails"""
-        # Arrange
-        mock_epic.apply.return_value = self.mock_async_result
-        failed_result = Mock()
-        failed_result.successful.return_value = False
-        mock_story.apply.return_value = failed_result
-
-        # Act & Assert
-        with self.assertRaises(JiraUpdateError) as context:
-            process_jira_updates_and_changes(self.mock_task)
-        
-        # Verify error handling and logging
-        self.assertIn("Story update process failed", str(context.exception))
-        mock_logger.error.assert_called_once_with(
-            "Jira update process failed: Story update process failed"
-        )
-        
-        # Verify execution order
-        mock_epic.apply.assert_called_once()
-        mock_story.apply.assert_called_once()
-
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.fetch_jira_epic_updates')
-    @patch('jira_integration.tasks.fetch_jira_story_updates')
-    @patch('jira_integration.tasks.fetch_jira_task_updates')
-    def test_process_jira_updates_task_failure(
-        self, mock_task, mock_story, mock_epic, mock_logger
-    ):
-        """Test process failure when task update fails"""
-        # Arrange
-        mock_epic.apply.return_value = self.mock_async_result
-        mock_story.apply.return_value = self.mock_async_result
-        failed_result = Mock()
-        failed_result.successful.return_value = False
-        mock_task.apply.return_value = failed_result
-
-        # Act & Assert
-        with self.assertRaises(JiraUpdateError) as context:
-            process_jira_updates_and_changes(self.mock_task)
-        
-        # Verify error handling and logging
-        self.assertIn("Task update process failed", str(context.exception))
-        mock_logger.error.assert_called_once_with(
-            "Jira update process failed: Task update process failed"
-        )
-        
-        # Verify execution order
-        mock_epic.apply.assert_called_once()
-        mock_story.apply.assert_called_once()
-        mock_task.apply.assert_called_once()
-
-    @patch('jira_integration.tasks.logger')
-    @patch('jira_integration.tasks.fetch_jira_epic_updates')
-    def test_process_jira_updates_unexpected_error(self, mock_epic, mock_logger):
-        """Test handling of unexpected errors in the process"""
-        # Arrange
-        mock_epic.apply.side_effect = Exception("Unexpected error")
-
-        # Act & Assert
-        with self.assertRaises(Exception) as context:
-            process_jira_updates_and_changes(self.mock_task)
-        
-        self.assertIn("Unexpected error", str(context.exception))
-        mock_logger.error.assert_called_once_with(
-            "Unexpected error in Jira update process: Unexpected error"
-        )
+----------------------------------------------------------------------

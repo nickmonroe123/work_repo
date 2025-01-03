@@ -1,84 +1,52 @@
-# test_parsers.py
+System check identified 1 issue (0 silenced).
+hi1
+hi4
+F
+======================================================================
+FAIL: test_get_parent_with_multiple_links (jira_integration.tests.TaskParserTestCase.test_get_parent_with_multiple_links)
+Test _get_parent with multiple parent links [0.0297s]
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/app/src/pcs3/jira_integration/tests.py", line 592, in test_get_parent_with_multiple_links
+    with self.assertRaises(ValueError) as context:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
 
-class StoryParserTestCase(BaseParserTestCase):
-    """Test cases for StoryParser class"""
+----------------------------------------------------------------------
 
-    def setUp(self):
-        super().setUp()
-        self.base_fields['fields'].update({
-            'issuetype': {'name': 'Story'},
-            constants.EPIC_LINK: 'EPIC-123'
-        })
-        self.parser = StoryParser(self.base_fields)
+    def _get_parent(self) -> Optional[str]:
+        """
+        Get parent issue key following specific business rules:
+        1. Must be a parent-child relationship
+        2. Must be in the same project
+        3. Can only have one parent in the same project
+        """
+        # Filter parent-child relationships in the same project
+        parent_child_issue_links = [
+            d for d in self.data['fields']['issuelinks']
+            if (d['type']['inward'] == 'is child task of' and
+                'inwardIssue' in d and
+                d['inwardIssue']['key'].startswith(self.data['key'].split('-')[0]))
+        ]
 
-    @patch('jira_integration.models.Epic.objects.get')
-    def test_create_or_update_story_with_existing_epic(self, mock_epic_get):
-        """Test creating story with existing epic"""
-        mock_epic = Mock()
-        mock_epic_get.return_value = mock_epic
-        
-        story_data = self.parser.parse()
-        
-        with patch('jira_integration.models.Story.objects.update_or_create') as mock_create:
-            self.parser.create_or_update(story_data)
-            
-            expected_defaults = story_data.copy()
-            epic_key = expected_defaults.pop('parent')
-            
-            mock_epic_get.assert_called_once_with(id=epic_key)
-            mock_create.assert_called_once_with(
-                id=story_data['id'],
-                defaults={**expected_defaults, 'parent': mock_epic}
-            )
-
-    @patch('jira_integration.models.Epic.objects.get')
-    def test_create_or_update_story_with_missing_epic(self, mock_epic_get):
-        """Test creating story with non-existent epic"""
-        mock_epic_get.side_effect = Epic.DoesNotExist()
-        
-        story_data = self.parser.parse()
-        
-        with patch('jira_integration.models.Story.objects.update_or_create') as mock_create:
-            with patch('builtins.print') as mock_print:
-                self.parser.create_or_update(story_data)
-                
-                mock_print.assert_called_once_with(
-                    f"Warning: Parent Epic EPIC-123 not found for Story {story_data['id']}"
-                )
-                
-                # Verify create called with correct data
-                mock_create.assert_called_once_with(
-                    id=story_data['id'],
-                    defaults=story_data
-                )
-
-
-class TaskParserTestCase(BaseParserTestCase):
-    """Test cases for TaskParser class"""
-
-    def setUp(self):
-        super().setUp()
-        self.base_fields['key'] = 'TEST-123'
-        self.base_fields['fields'].update({
-            'issuetype': {'name': 'Access Ticket'},
-            constants.ASSIGNED_GROUP: {'value': 'IT'},
-            constants.CLOSE_CODE: {'value': 'COMPLETED'},
-            'issuelinks': [{
-                'type': {'inward': 'is child task of'},
-                'inwardIssue': {
-                    'key': 'STORY-123',
-                    'fields': {'project': {'key': 'TEST'}}
-                }
-            }]
-        })
-        self.parser = TaskParser(self.base_fields)
-
-    def test_get_parent_with_single_link(self):
-        """Test _get_parent with single valid parent link"""
-        self.base_fields['key'] = 'TEST-123'  # Ensure key matches project
-        result = self.parser._get_parent()
-        self.assertEqual(result, 'STORY-123')
-
+        num_links = len(parent_child_issue_links)
+        if num_links != 1:
+            print("hi1")
+            try:
+                # Check if task already exists and has a parent
+                existing_task = Story.objects.get(id=self.data['key'])
+                if existing_task.parent:
+                    print("hi2")
+                    return existing_task.parent.pk
+                else:
+                    print("hi3")
+                    if num_links > 1:
+                        raise ValueError("Tasks cannot have multiple parents in the same project")
+                    raise ValueError("Tasks must have parents")
+            except Story.DoesNotExist:
+                print("hi4")
+                # New task with no parent - allowed for initial creation
+                return None
     def test_get_parent_with_multiple_links(self):
         """Test _get_parent with multiple parent links"""
         self.base_fields['key'] = 'TEST-123'
@@ -86,81 +54,26 @@ class TaskParserTestCase(BaseParserTestCase):
             {
                 'type': {'inward': 'is child task of'},
                 'inwardIssue': {
-                    'key': 'STORY-123',
+                    'key': 'TEST-1234',
                     'fields': {'project': {'key': 'TEST'}}
                 }
             },
             {
                 'type': {'inward': 'is child task of'},
                 'inwardIssue': {
-                    'key': 'STORY-124',
+                    'key': 'TEST-1234',
                     'fields': {'project': {'key': 'TEST'}}
                 }
             }
         ]
-        
+
         with patch('jira_integration.models.Story.objects.get') as mock_get:
             mock_get.side_effect = Story.DoesNotExist()
-            
+
             with self.assertRaises(ValueError) as context:
                 self.parser._get_parent()
-            
+
             self.assertEqual(
                 str(context.exception),
                 "Tasks cannot have multiple parents in the same project"
             )
-
-    def test_parse_task_full_data(self):
-        """Test parsing task with all fields"""
-        self.base_fields['key'] = 'TEST-123'
-        result = self.parser.parse()
-        
-        self.assertEqual(result['issue_type'], 'ACCESS_TICKET')
-        self.assertEqual(result['business_unit'], 'IT')
-        self.assertEqual(result['close_code'], 'COMPLETED')
-        self.assertEqual(result['parent_key'], 'STORY-123')
-
-    @patch('jira_integration.models.Story.objects.get')
-    def test_create_or_update_task_with_existing_parent(self, mock_story_get):
-        """Test creating task with existing parent story"""
-        mock_story = Mock()
-        mock_story_get.return_value = mock_story
-        
-        self.base_fields['key'] = 'TEST-123'
-        task_data = self.parser.parse()
-        
-        with patch('jira_integration.models.Task.objects.update_or_create') as mock_create:
-            self.parser.create_or_update(task_data)
-            
-            expected_defaults = task_data.copy()
-            parent_key = expected_defaults.pop('parent_key')
-            
-            mock_story_get.assert_called_once_with(id=parent_key)
-            mock_create.assert_called_once_with(
-                id=task_data['id'],
-                defaults={**expected_defaults, 'parent': mock_story}
-            )
-
-    @patch('jira_integration.models.Story.objects.get')
-    def test_create_or_update_task_with_missing_parent(self, mock_story_get):
-        """Test creating task with non-existent parent story"""
-        mock_story_get.side_effect = Story.DoesNotExist()
-        
-        self.base_fields['key'] = 'TEST-123'
-        task_data = self.parser.parse()
-        
-        with patch('jira_integration.models.Task.objects.update_or_create') as mock_create:
-            with patch('builtins.print') as mock_print:
-                self.parser.create_or_update(task_data)
-                
-                mock_print.assert_called_once_with(
-                    f"Warning: Parent Issue STORY-123 not found for Task {task_data['id']}"
-                )
-                
-                # Verify create called with correct data
-                expected_defaults = task_data.copy()
-                expected_defaults.pop('parent_key')
-                mock_create.assert_called_once_with(
-                    id=task_data['id'],
-                    defaults=expected_defaults
-                )

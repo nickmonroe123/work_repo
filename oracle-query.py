@@ -1,31 +1,93 @@
-    def _get_parent(self) -> Optional[str]:
-        """
-        Get parent issue key following specific business rules:
-        1. Must be a parent-child relationship
-        2. Must be in the same project
-        3. Can only have one parent in the same project
-        """
-        # Filter parent-child relationships in the same project
-        parent_child_issue_links = [
-            d for d in self.data['fields']['issuelinks']
-            if (d['type']['inward'] == 'is child task of' and
-                'inwardIssue' in d and
-                d['inwardIssue']['key'].startswith(self.data['key'].split('-')[0]))
-        ]
+# Add these test methods to your TaskParserTestCase class
 
-        num_links = len(parent_child_issue_links)
-        if num_links != 1:
-            try:
-                # Check if task already exists and has a parent
-                existing_task = Story.objects.get(id=self.data['key'])
-                if existing_task.parent:
-                    return existing_task.parent.pk#"Not run"
-                else:
-                    if num_links > 1:
-                        raise ValueError("Tasks cannot have multiple parents in the same project")
-                    raise ValueError("Tasks must have parents")#"Not run"
-            except Story.DoesNotExist:
-                # New task with no parent - allowed for initial creation
-                return None #"Not run"
+def test_get_parent_existing_task_with_parent(self):
+    """Test _get_parent when task exists and has a parent"""
+    # Setup task with no issue links
+    self.base_fields['fields']['issuelinks'] = []
+    
+    # Mock existing task with parent
+    mock_parent = Mock()
+    mock_parent.pk = 'STORY-999'
+    mock_task = Mock()
+    mock_task.parent = mock_parent
+    
+    with patch('jira_integration.models.Story.objects.get') as mock_get:
+        mock_get.return_value = mock_task
+        
+        # Act
+        result = self.parser._get_parent()
+        
+        # Assert
+        self.assertEqual(result, 'STORY-999')
+        mock_get.assert_called_once_with(id=self.base_fields['key'])
 
-I need help with getting 100% coverage on this function. Currently the lines that end with "Not run" as a comment dont get hit by my test cases that use djano unit testing. 
+def test_get_parent_existing_task_no_parent_raises_error(self):
+    """Test _get_parent when task exists but has no parent"""
+    # Setup task with no issue links
+    self.base_fields['fields']['issuelinks'] = []
+    
+    # Mock existing task without parent
+    mock_task = Mock()
+    mock_task.parent = None
+    
+    with patch('jira_integration.models.Story.objects.get') as mock_get:
+        mock_get.return_value = mock_task
+        
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            self.parser._get_parent()
+        
+        self.assertEqual(str(context.exception), "Tasks must have parents")
+        mock_get.assert_called_once_with(id=self.base_fields['key'])
+
+def test_get_parent_multiple_links_existing_task_no_parent(self):
+    """Test _get_parent with multiple links and existing task without parent"""
+    # Setup multiple issue links
+    self.base_fields['fields']['issuelinks'] = [
+        {
+            'type': {'inward': 'is child task of'},
+            'inwardIssue': {
+                'key': 'TEST-124',
+                'fields': {'project': {'key': 'TEST'}}
+            }
+        },
+        {
+            'type': {'inward': 'is child task of'},
+            'inwardIssue': {
+                'key': 'TEST-125',
+                'fields': {'project': {'key': 'TEST'}}
+            }
+        }
+    ]
+    
+    # Mock existing task without parent
+    mock_task = Mock()
+    mock_task.parent = None
+    
+    with patch('jira_integration.models.Story.objects.get') as mock_get:
+        mock_get.return_value = mock_task
+        
+        # Act & Assert
+        with self.assertRaises(ValueError) as context:
+            self.parser._get_parent()
+        
+        self.assertEqual(
+            str(context.exception),
+            "Tasks cannot have multiple parents in the same project"
+        )
+        mock_get.assert_called_once_with(id=self.base_fields['key'])
+
+def test_get_parent_new_task_no_links(self):
+    """Test _get_parent for new task with no links"""
+    # Setup task with no issue links
+    self.base_fields['fields']['issuelinks'] = []
+    
+    with patch('jira_integration.models.Story.objects.get') as mock_get:
+        mock_get.side_effect = Story.DoesNotExist()
+        
+        # Act
+        result = self.parser._get_parent()
+        
+        # Assert
+        self.assertIsNone(result)
+        mock_get.assert_called_once_with(id=self.base_fields['key'])
